@@ -1,6 +1,6 @@
-# ExplainIQ Platform
+# ExplainIQ Agent
 
-A comprehensive Go-based microservices platform optimized for Google Cloud Run, designed for AI-powered explanation and analysis services.
+A comprehensive AI-powered microservices platform for intelligent explanation and analysis, built with Go and optimized for cloud deployment.
 
 ## Architecture
 
@@ -26,8 +26,8 @@ The platform consists of six main services:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/creduntvitam/explainiq.git
-   cd explainiq
+   git clone https://github.com/InnoFusionTech/ExplainIQ.git
+   cd ExplainIQ
    ```
 
 2. **Setup development environment**
@@ -132,12 +132,12 @@ make docker-push
 ## Project Structure
 
 ```
-explainiq/
+ExplainIQ/
 ├── cmd/                          # Service entry points
 │   ├── orchestrator/
-│   ├── agent-summarizer/
-│   ├── agent-explainer/
 │   ├── agent-critic/
+│   ├── agent-explainer/
+│   ├── agent-summarizer/
 │   ├── agent-visualizer/
 │   └── frontend/
 ├── internal/                     # Shared packages
@@ -148,15 +148,21 @@ explainiq/
 │   ├── auth/                    # Authentication utilities
 │   ├── telemetry/               # Observability tools
 │   └── apiutils/                # API utilities
-├── deploy/                      # Deployment configurations
+├── docker/                       # Docker configurations
+│   ├── Dockerfile.*
+│   └── docker-compose*.yml
+├── docs/                         # Documentation
+│   ├── AI_MODEL_SETUP.md
+│   ├── AUTHENTICATION.md
+│   ├── ENVIRONMENT_SETUP.md
+│   └── QUOTA_SYSTEM.md
+├── deploy/                       # Deployment configurations
 │   └── cloudrun/
-├── .github/                     # GitHub Actions workflows
-│   └── workflows/
-├── go.work                      # Go workspace file
-├── go.mod                       # Root module definition
-├── Makefile                     # Build automation
-├── env.example                  # Environment variables template
-└── README.md                    # This file
+├── go.work                       # Go workspace file
+├── go.mod                        # Root module definition
+├── Makefile                      # Build automation
+├── .env                          # Environment variables
+└── README.md                     # This file
 ```
 
 ## Development
