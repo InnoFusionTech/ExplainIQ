@@ -1,0 +1,21 @@
+go 1.22
+
+use (
+	./cmd/agent-critic
+	./cmd/agent-explainer
+	./cmd/agent-summarizer
+	./cmd/agent-visualizer
+	./cmd/frontend
+	./cmd/orchestrator
+	./internal/adk
+	./internal/apiutils
+	./internal/apiutils/config
+	./internal/auth
+	./internal/cost_tracker
+	./internal/elastic
+	./internal/llm
+	./internal/quota
+	./internal/rate_limiter
+	./internal/storage
+	./internal/telemetry
+)

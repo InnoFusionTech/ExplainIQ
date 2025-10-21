@@ -1,0 +1,132 @@
+services:
+  # Orchestrator Service - Main API and workflow coordinator
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/orchestrator:/app/cmd/orchestrator
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Agent Summarizer Service
+  agent-summarizer:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-summarizer
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/agent-summarizer:/app/cmd/agent-summarizer
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Agent Explainer Service
+  agent-explainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-explainer
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/agent-explainer:/app/cmd/agent-explainer
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Agent Critic Service
+  agent-critic:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-critic
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/agent-critic:/app/cmd/agent-critic
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Agent Visualizer Service
+  agent-visualizer:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-visualizer
+    ports:
+      - "8084:8084"
+    environment:
+      - PORT=8084
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/agent-visualizer:/app/cmd/agent-visualizer
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Go Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8085:8085"
+    environment:
+      - PORT=8085
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+    volumes:
+      - ./cmd/frontend:/app/cmd/frontend
+      - ./internal:/app/internal
+    networks:
+      - explainiq-network
+
+  # Next.js Frontend Service (Development)
+  frontend-nextjs:
+    build:
+      context: ./cmd/frontend/nextjs
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      - ./cmd/frontend/nextjs:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - orchestrator
+    networks:
+      - explainiq-network
+
+networks:
+  explainiq-network:
+    driver: bridge
