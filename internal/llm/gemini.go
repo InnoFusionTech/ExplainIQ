@@ -1,16 +1,14 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 	"github.com/sirupsen/logrus"
 )
 
@@ -27,13 +25,29 @@ type GeminiClientInterface interface {
 	GetModelInfo() map[string]interface{}
 }
 
+// ModelsWrapper wraps the genai client to provide Models.GenerateContent interface
+type ModelsWrapper struct {
+	client *genai.Client
+}
+
+// GenerateContent wraps the SDK call to match the requested format:
+// client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), nil)
+func (m *ModelsWrapper) GenerateContent(ctx context.Context, modelName string, prompt genai.Part, config *genai.GenerationConfig) (*genai.GenerateContentResponse, error) {
+	model := m.client.GenerativeModel(modelName)
+	if config != nil {
+		model.GenerationConfig = *config
+	}
+	// Use the exact format: model.GenerateContent(ctx, prompt)
+	// The SDK accepts variadic parts, so we pass the single part directly
+	return model.GenerateContent(ctx, prompt)
+}
+
 // GeminiClient represents a client for Google Gemini API
 type GeminiClient struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
-	logger     *logrus.Logger
+	client *genai.Client
+	Models *ModelsWrapper // Provides client.Models.GenerateContent() interface
+	model  string
+	logger *logrus.Logger
 }
 
 // GeminiRequest represents a request to the Gemini API
@@ -149,19 +163,52 @@ type VisualizeResponse struct {
 	Captions []string   `json:"captions"` // List of captions for the images
 }
 
-// NewGeminiClient creates a new Gemini client
+// NewGeminiClient creates a new Gemini client using the official SDK
+// Supports both API key authentication and Application Default Credentials (ADC)
+// If apiKey is empty, it will try to use GEMINI_API_KEY env var, or fall back to ADC (nil)
 func NewGeminiClient(apiKey string) *GeminiClient {
+	var client *genai.Client
+	var err error
+	ctx := context.Background()
+
+	// Try to get API key from environment if not provided
 	if apiKey == "" {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
 
+	// Initialize client with API key if available, otherwise use ADC (nil)
+	if apiKey != "" {
+		// Use API key authentication
+		client, err = genai.NewClient(ctx, option.WithAPIKey(apiKey))
+		if err != nil {
+			logrus.WithError(err).Error("Failed to create Gemini client with API key")
+			return &GeminiClient{
+				client: nil,
+				Models: nil,
+				model:  "gemini-2.5-flash",
+				logger: logrus.New(),
+			}
+		}
+		logrus.Debug("Gemini client initialized with API key")
+	} else {
+		// Use Application Default Credentials (ADC) - like genai.NewClient(ctx, nil)
+		client, err = genai.NewClient(ctx, nil)
+		if err != nil {
+			logrus.WithError(err).Error("Failed to create Gemini client with ADC")
+			return &GeminiClient{
+				client: nil,
+				Models: nil,
+				model:  "gemini-2.5-flash",
+				logger: logrus.New(),
+			}
+		}
+		logrus.Debug("Gemini client initialized with Application Default Credentials (ADC)")
+	}
+
 	return &GeminiClient{
-		apiKey:  apiKey,
-		baseURL: "https://generativelanguage.googleapis.com/v1beta",
-		model:   "gemini-1.5-flash",
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		client: client,
+		Models: &ModelsWrapper{client: client},
+		model:  "gemini-2.5-flash",
 		logger: logrus.New(),
 	}
 }
@@ -177,27 +224,8 @@ func (c *GeminiClient) Summarize(ctx context.Context, topic, context string) (*S
 	// Create the prompt
 	prompt := c.createSummarizePrompt(topic, context)
 
-	// Create the request
-	request := GeminiRequest{
-		Contents: []GeminiContent{
-			{
-				Parts: []GeminiPart{
-					{
-						Text: prompt,
-					},
-				},
-			},
-		},
-		GenerationConfig: GeminiGenerationConfig{
-			Temperature:     0.3, // Lower temperature for more consistent output
-			TopP:            0.8,
-			TopK:            40,
-			MaxOutputTokens: 2048,
-		},
-	}
-
-	// Execute the request
-	response, err := c.executeRequest(ctx, request)
+	// Execute the request using the SDK
+	response, err := c.executeRequest(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute summarization request: %w", err)
 	}
@@ -247,50 +275,57 @@ Requirements:
 Topic: %s`, topic, context, topic)
 }
 
-// executeRequest executes a request to the Gemini API
-func (c *GeminiClient) executeRequest(ctx context.Context, request GeminiRequest) (*GeminiResponse, error) {
-	// Marshal request
-	requestBody, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+// executeRequest executes a request to the Gemini API using the official SDK
+// Uses the requested format: client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), nil)
+func (c *GeminiClient) executeRequest(ctx context.Context, prompt string) (*GeminiResponse, error) {
+	if c.client == nil || c.Models == nil {
+		return nil, fmt.Errorf("Gemini client not initialized")
 	}
 
-	// Create HTTP request
-	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", c.baseURL, c.model, c.apiKey)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
+	// Use the requested format: client.Models.GenerateContent(ctx, model, genai.Text(prompt), nil)
+	result, err := c.Models.GenerateContent(
+		ctx,
+		c.model,
+		genai.Text(prompt),
+		nil,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-
-	// Execute request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	// Convert SDK response to our internal format
+	response := &GeminiResponse{
+		Candidates: []GeminiCandidate{},
 	}
 
-	// Check for errors
-	if resp.StatusCode != http.StatusOK {
-		var apiError GeminiError
-		if err := json.Unmarshal(responseBody, &apiError); err == nil {
-			return nil, fmt.Errorf("API error %d: %s", apiError.Error.Code, apiError.Error.Message)
+	// Process candidates from the SDK response
+	if result.Candidates != nil && len(result.Candidates) > 0 {
+		candidate := result.Candidates[0]
+		geminiCandidate := GeminiCandidate{
+			Content: GeminiContent{
+				Parts: []GeminiPart{},
+			},
 		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(responseBody))
+
+		// Extract text from parts
+		for _, part := range candidate.Content.Parts {
+			if textPart, ok := part.(genai.Text); ok {
+				geminiCandidate.Content.Parts = append(geminiCandidate.Content.Parts, GeminiPart{
+					Text: string(textPart),
+				})
+			}
+		}
+
+		response.Candidates = append(response.Candidates, geminiCandidate)
 	}
 
-	// Parse response
-	var response GeminiResponse
-	if err := json.Unmarshal(responseBody, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	// Process usage metadata if available
+	if result.UsageMetadata != nil {
+		response.UsageMetadata = GeminiUsageMetadata{
+			PromptTokenCount:     int(result.UsageMetadata.PromptTokenCount),
+			CandidatesTokenCount: int(result.UsageMetadata.CandidatesTokenCount),
+			TotalTokenCount:      int(result.UsageMetadata.TotalTokenCount),
+		}
 	}
 
 	// Validate response
@@ -298,7 +333,7 @@ func (c *GeminiClient) executeRequest(ctx context.Context, request GeminiRequest
 		return nil, fmt.Errorf("no candidates in response")
 	}
 
-	return &response, nil
+	return response, nil
 }
 
 // parseSummarizeResponse parses the summarization response
@@ -383,24 +418,12 @@ func (c *GeminiClient) cleanStringArray(arr []string, maxLen int) []string {
 
 // Health checks the health of the Gemini client
 func (c *GeminiClient) Health(ctx context.Context) error {
-	// Create a simple test request
-	testRequest := GeminiRequest{
-		Contents: []GeminiContent{
-			{
-				Parts: []GeminiPart{
-					{
-						Text: "Hello, respond with 'OK'",
-					},
-				},
-			},
-		},
-		GenerationConfig: GeminiGenerationConfig{
-			Temperature:     0.1,
-			MaxOutputTokens: 10,
-		},
+	if c.client == nil {
+		return fmt.Errorf("Gemini client not initialized")
 	}
 
-	_, err := c.executeRequest(ctx, testRequest)
+	// Create a simple test request using the SDK
+	_, err := c.executeRequest(ctx, "Hello, respond with 'OK'")
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}
@@ -408,9 +431,26 @@ func (c *GeminiClient) Health(ctx context.Context) error {
 	return nil
 }
 
-// SetAPIKey updates the API key
+// SetAPIKey updates the API key (recreates the client)
 func (c *GeminiClient) SetAPIKey(apiKey string) {
-	c.apiKey = apiKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	}
+
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		c.logger.WithError(err).Error("Failed to recreate Gemini client with new API key")
+		return
+	}
+	
+	// Close old client if it exists
+	if c.client != nil {
+		c.client.Close()
+	}
+	
+	c.client = client
+	c.Models = &ModelsWrapper{client: client}
 }
 
 // SetModel updates the model
@@ -418,9 +458,10 @@ func (c *GeminiClient) SetModel(model string) {
 	c.model = model
 }
 
-// SetBaseURL updates the base URL
+// SetBaseURL updates the base URL (no-op for SDK, kept for interface compatibility)
 func (c *GeminiClient) SetBaseURL(baseURL string) {
-	c.baseURL = baseURL
+	// SDK doesn't support custom base URLs, but we keep this for interface compatibility
+	c.logger.Warn("SetBaseURL is not supported with the official SDK")
 }
 
 // ExplainWithOG generates an OpenGraph-style lesson using the Gemini model
@@ -436,27 +477,8 @@ func (c *GeminiClient) ExplainWithOG(ctx context.Context, topic, outline, miscon
 	// Construct the prompt
 	prompt := c.buildExplainOGPrompt(topic, outline, misconceptions, context)
 
-	// Create request
-	request := GeminiRequest{
-		Contents: []GeminiContent{
-			{
-				Parts: []GeminiPart{
-					{
-						Text: prompt,
-					},
-				},
-			},
-		},
-		GenerationConfig: GeminiGenerationConfig{
-			Temperature:     0.7,
-			TopK:            40,
-			TopP:            0.95,
-			MaxOutputTokens: 2048,
-		},
-	}
-
-	// Make API call
-	response, err := c.executeRequest(ctx, request)
+	// Make API call using the SDK
+	response, err := c.executeRequest(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("API request failed: %w", err)
 	}
@@ -558,9 +580,43 @@ func (c *GeminiClient) parseOGLessonResponse(responseText string) (*OGLesson, er
 
 	jsonStr := responseText[jsonStart : jsonEnd+1]
 
-	var ogLesson OGLesson
-	if err := json.Unmarshal([]byte(jsonStr), &ogLesson); err != nil {
+	// First unmarshal to a map to handle flexible types (arrays vs strings)
+	var rawData map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &rawData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OG lesson JSON: %w", err)
+	}
+
+	// Convert arrays to strings for all fields that might come as arrays
+	// Gemini sometimes returns fields as arrays instead of strings
+	fieldNames := []string{"big_picture", "metaphor", "core_mechanism", "toy_example_code", "memory_hook", "real_life", "best_practices"}
+	for _, fieldName := range fieldNames {
+		if val, ok := rawData[fieldName]; ok {
+			switch v := val.(type) {
+			case []interface{}:
+				// Convert array to string by joining items with newlines
+				items := make([]string, 0, len(v))
+				for _, item := range v {
+					if str, ok := item.(string); ok {
+						items = append(items, str)
+					}
+				}
+				rawData[fieldName] = strings.Join(items, "\n")
+			case string:
+				// Already a string, keep it
+				rawData[fieldName] = v
+			}
+		}
+	}
+
+	// Now marshal back to JSON and unmarshal into the struct
+	normalizedJSON, err := json.Marshal(rawData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize JSON: %w", err)
+	}
+
+	var ogLesson OGLesson
+	if err := json.Unmarshal(normalizedJSON, &ogLesson); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal normalized OG lesson JSON: %w", err)
 	}
 
 	// Clean and validate the response
@@ -585,27 +641,8 @@ func (c *GeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*
 	// Construct the prompt
 	prompt := c.buildCritiquePrompt(lessonJSON)
 
-	// Create request
-	request := GeminiRequest{
-		Contents: []GeminiContent{
-			{
-				Parts: []GeminiPart{
-					{
-						Text: prompt,
-					},
-				},
-			},
-		},
-		GenerationConfig: GeminiGenerationConfig{
-			Temperature:     0.3, // Lower temperature for more consistent critique
-			TopK:            40,
-			TopP:            0.95,
-			MaxOutputTokens: 2048,
-		},
-	}
-
-	// Make API call
-	response, err := c.executeRequest(ctx, request)
+	// Make API call using the SDK
+	response, err := c.executeRequest(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("API request failed: %w", err)
 	}
@@ -816,8 +853,8 @@ func (c *GeminiClient) buildVisualizationPrompts(coreMechanism string) ([]Visual
 // GetModelInfo returns information about the current model
 func (c *GeminiClient) GetModelInfo() map[string]interface{} {
 	return map[string]interface{}{
-		"model":       c.model,
-		"base_url":    c.baseURL,
-		"api_key_set": c.apiKey != "",
+		"model":        c.model,
+		"client_valid": c.client != nil,
+		"sdk_version":  "google.generative-ai-go",
 	}
 }

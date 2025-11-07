@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.7.0",
+    "@vercel/og": "^0.5.8",
     "next": "14.0.4",
     "puppeteer": "^21.6.1",
     "react": "18.2.0",

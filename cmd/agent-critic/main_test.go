@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/creduntvitam/explainiq/internal/adk"
-	"github.com/creduntvitam/explainiq/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -34,6 +34,10 @@ func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string
 		return m.critiqueLessonFunc(ctx, lessonJSON)
 	}
 	return nil, errors.New("mock error")
+}
+
+func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (m *MockGeminiClient) Health(ctx context.Context) error {
@@ -86,7 +90,7 @@ func TestCriticService_ProcessTask_Success(t *testing.T) {
 
 	// Create service with mock client
 	service := &CriticService{
-		geminiClient: mockClient,
+		geminiClient: llm.GeminiClientInterface(mockClient),
 		logger:       logrus.New(),
 	}
 
@@ -464,6 +468,3 @@ func TestCriticService_HTTPHandlers_ValidRequestWithMock(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "patch_plan")
 	assert.Contains(t, w.Body.String(), "issues_count")
 }
-
-
-

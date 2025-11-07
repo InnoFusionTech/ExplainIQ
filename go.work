@@ -1,21 +1,28 @@
 go 1.22
 
 use (
+	.
 	./cmd/agent-critic
 	./cmd/agent-explainer
 	./cmd/agent-summarizer
 	./cmd/agent-visualizer
-	./cmd/frontend
+	./cmd/env-setup
 	./cmd/orchestrator
 	./internal/adk
+	./internal/agent
 	./internal/apiutils
 	./internal/apiutils/config
 	./internal/auth
+	./internal/cache
+	./internal/config
+	./internal/constants
 	./internal/cost_tracker
 	./internal/elastic
 	./internal/llm
+	./internal/logger
+	./internal/pool
 	./internal/quota
 	./internal/rate_limiter
+	./internal/server
 	./internal/storage
-	./internal/telemetry
 )

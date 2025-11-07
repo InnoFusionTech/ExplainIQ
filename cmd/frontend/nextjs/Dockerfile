@@ -9,7 +9,10 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Try npm ci first (faster, requires exact match), fallback to npm install if it fails
+# Use cache mount for npm cache to speed up subsequent builds
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci || npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -50,7 +53,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy the built application
-COPY --from=builder /app/public ./public
+RUN mkdir -p ./public
 
 # Set the correct permission for prerender cache
 RUN mkdir .next

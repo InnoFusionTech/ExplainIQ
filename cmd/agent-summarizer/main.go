@@ -4,19 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"strconv"
 
-	"github.com/explainiq/agent/internal/adk"
-	"github.com/explainiq/agent/internal/auth"
-	"github.com/explainiq/agent/internal/config"
-	"github.com/explainiq/agent/internal/cost_tracker"
-	"github.com/explainiq/agent/internal/llm"
-	"github.com/explainiq/agent/internal/storage"
-	"github.com/gin-gonic/gin"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/agent"
+	"github.com/InnoFusionTech/ExplainIQ/internal/constants"
+	"github.com/InnoFusionTech/ExplainIQ/internal/cost_tracker"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/storage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,14 +27,19 @@ type SummarizerService struct {
 func NewSummarizerService() *SummarizerService {
 	geminiClient := llm.NewGeminiClient("")
 
-	// Create storage client for cost tracking
-	storageClient, err := storage.NewFirestoreClient(context.Background(), os.Getenv("GCP_PROJECT_ID"))
-	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create storage client")
+	// Create storage client for cost tracking (optional)
+	var costTracker *cost_tracker.CostTracker
+	gcpProjectID := os.Getenv("GCP_PROJECT_ID")
+	if gcpProjectID != "" {
+		storageClient, err := storage.NewFirestoreClient(context.Background(), gcpProjectID, "sessions")
+		if err != nil {
+			logrus.WithError(err).Warn("Failed to create Firestore client, continuing without cost tracking")
+		} else {
+			costTracker = cost_tracker.NewCostTracker(storageClient)
+		}
+	} else {
+		logrus.Warn("GCP_PROJECT_ID not set, continuing without cost tracking")
 	}
-
-	// Create cost tracker
-	costTracker := cost_tracker.NewCostTracker(storageClient)
 
 	return &SummarizerService{
 		geminiClient: geminiClient,
@@ -77,21 +78,17 @@ func (s *SummarizerService) ProcessTask(ctx context.Context, req adk.TaskRequest
 	}
 
 	// Track LLM call cost (estimate tokens)
-	inputTokens := len(topic) + len(context)                                                     // Rough estimate
-	outputTokens := len(result.Outline) + len(result.Prerequisites) + len(result.Misconceptions) // Rough estimate
+	if s.costTracker != nil {
+		inputTokens := len(topic) + len(context)                                                     // Rough estimate
+		outputTokens := len(result.Outline) + len(result.Prerequisites) + len(result.Misconceptions) // Rough estimate
 
-	// Get client IP from context if available
-	ipAddress := ""
-	if ginCtx, ok := ctx.Value("gin_context").(*gin.Context); ok {
-		ipAddress = ginCtx.ClientIP()
-	}
-
-	// Track the cost
-	if err := s.costTracker.TrackLLMCall(ctx, req.SessionID, "", ipAddress, "gemini-pro", inputTokens, outputTokens); err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"session_id": req.SessionID,
-			"error":      err,
-		}).Warn("Failed to track LLM call cost")
+		// Track the cost
+		if err := s.costTracker.TrackLLMCall(ctx, req.SessionID, "", "", "gemini-pro", inputTokens, outputTokens); err != nil {
+			s.logger.WithFields(logrus.Fields{
+				"session_id": req.SessionID,
+				"error":      err,
+			}).Warn("Failed to track LLM call cost")
+		}
 	}
 
 	// Convert result to artifacts
@@ -137,122 +134,25 @@ func (s *SummarizerService) ProcessTask(ctx context.Context, req adk.TaskRequest
 }
 
 func main() {
-	// Load environment variables from .env file
-	if err := config.LoadEnvFiles(); err != nil {
-		logrus.Warnf("Failed to load .env file: %v", err)
-	}
-
-	log := logrus.New()
-	log.SetLevel(logrus.InfoLevel)
-
-	// Set Gin mode
-	if os.Getenv("GIN_MODE") == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
 	// Create summarizer service
 	service := NewSummarizerService()
 
-	// Create auth client
-	serviceURL := os.Getenv("SERVICE_URL")
-	if serviceURL == "" {
-		serviceURL = "http://localhost:8081"
-	}
-	authClient := auth.NewClient(serviceURL)
-
-	router := gin.New()
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-
-	// Health check endpoint (no auth required)
-	router.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "healthy",
-			"service":   "agent-summarizer",
-			"timestamp": time.Now().UTC(),
-		})
-	})
-
-	// Task processing endpoint (auth required)
-	router.POST("/task", auth.ServiceAuthMiddleware(authClient), func(c *gin.Context) {
-		var req adk.TaskRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request format",
-				"details": err.Error(),
-			})
-			return
+	// Check if authentication is required (default to true for production, false for local dev)
+	requireAuth := true
+	if requireAuthStr := os.Getenv("REQUIRE_AUTH"); requireAuthStr != "" {
+		if val, err := strconv.ParseBool(requireAuthStr); err == nil {
+			requireAuth = val
 		}
-
-		// Validate request
-		if err := req.Validate(); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Process the task
-		response, err := service.ProcessTask(c.Request.Context(), req)
-		if err != nil {
-			log.WithFields(logrus.Fields{
-				"session_id": req.SessionID,
-				"error":      err,
-			}).Error("Task processing failed")
-
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Task processing failed",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, response)
-	})
-
-	// Legacy API endpoint for backward compatibility
-	api := router.Group("/api/v1")
-	{
-		api.POST("/summarize", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"message": "Use POST /task endpoint instead",
-				"service": "agent-summarizer",
-			})
-		})
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8081"
+	// Start agent service using shared infrastructure
+	if err := agent.StartAgentService(agent.ServiceConfig{
+		ServiceName: constants.ServiceSummarizer,
+		DefaultPort: constants.DefaultPortSummarizer,
+		DefaultURL:  constants.DefaultURLSummarizer,
+		Processor:   service,
+		RequireAuth: requireAuth,
+	}); err != nil {
+		service.logger.Fatalf("Failed to start service: %v", err)
 	}
-
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
-	}
-
-	// Start server in a goroutine
-	go func() {
-		log.Infof("Agent Summarizer service starting on port %s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
-		}
-	}()
-
-	// Wait for interrupt signal to gracefully shutdown the server
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info("Shutting down agent-summarizer service...")
-
-	// Give outstanding requests 30 seconds to complete
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
-
-	log.Info("Agent Summarizer service exited")
 }

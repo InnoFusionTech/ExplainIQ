@@ -1,0 +1,123 @@
+services:
+  # Orchestrator Service - Main API and workflow coordinator
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://orchestrator:8080
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Summarizer Service
+  agent-summarizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-summarizer
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-summarizer:8081
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Explainer Service
+  agent-explainer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-explainer
+    ports:
+      - "8082:8082"
+    environment:
+      - PORT=8082
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-explainer:8082
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Critic Service
+  agent-critic:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-critic
+    ports:
+      - "8083:8083"
+    environment:
+      - PORT=8083
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-critic:8083
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Visualizer Service
+  agent-visualizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-visualizer
+    ports:
+      - "8084:8084"
+    environment:
+      - PORT=8084
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-visualizer:8084
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+networks:
+  explainiq-network:
+    driver: bridge
+
+volumes:
+  explainiq-data:
+    driver: local
+

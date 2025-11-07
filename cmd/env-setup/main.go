@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/explainiq/agent/internal/config"
+	"github.com/InnoFusionTech/ExplainIQ/internal/config"
 )
 
 func main() {

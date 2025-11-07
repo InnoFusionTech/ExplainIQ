@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/explainiq/agent/internal/adk"
-	"github.com/explainiq/agent/internal/auth"
-	"github.com/explainiq/agent/internal/elastic"
-	"github.com/explainiq/agent/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/auth"
+	"github.com/InnoFusionTech/ExplainIQ/internal/elastic"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/sirupsen/logrus"
 )
 
@@ -40,6 +41,12 @@ type PipelineConfig struct {
 
 // DefaultPipelineConfig returns the default pipeline configuration
 func DefaultPipelineConfig() PipelineConfig {
+	// Get environment variables for service URLs
+	elasticURL := os.Getenv("ELASTIC_URL")
+	if elasticURL == "" {
+		elasticURL = "http://elasticsearch:9200"
+	}
+	
 	return PipelineConfig{
 		MaxRetries:   3,
 		RetryDelay:   2 * time.Second,
@@ -47,12 +54,12 @@ func DefaultPipelineConfig() PipelineConfig {
 		ContextTopK:  5,
 		ElasticIndex: "lessons",
 		AgentBaseURLs: map[string]string{
-			"summarizer": "http://localhost:8081",
-			"explainer":  "http://localhost:8082",
-			"visualizer": "http://localhost:8083",
-			"critic":     "http://localhost:8084",
+			"summarizer": "http://agent-summarizer:8081",
+			"explainer":  "http://agent-explainer:8082",
+			"visualizer": "http://agent-visualizer:8084",
+			"critic":     "http://agent-critic:8083",
 		},
-		ElasticBaseURL: "http://localhost:9200",
+		ElasticBaseURL: elasticURL,
 		ElasticAPIKey:  "",
 		LLMProjectID:   "explainiq-project",
 		LLMLocation:    "us-central1",
@@ -105,17 +112,23 @@ type Pipeline struct {
 func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 	logger := logrus.New()
 
-	// Initialize Elasticsearch client
-	elasticClient, err := elastic.NewClient(context.Background(), config.ElasticBaseURL, config.ElasticAPIKey)
+	// Initialize Elasticsearch client (optional)
+	var elasticClient *elastic.Client
+	var elasticRetriever *elastic.Retriever
+	var err error
+	
+	// Try to connect to Elasticsearch, but don't fail if it's not available
+	elasticClient, err = elastic.NewClient(context.Background(), config.ElasticBaseURL, config.ElasticAPIKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create elastic client: %w", err)
+		logger.WithError(err).Warn("Elasticsearch not available, continuing without context retrieval")
+		elasticClient = nil
+		elasticRetriever = nil
+	} else {
+		// Initialize embedding client
+		embeddingClient := llm.NewEmbeddingClient(config.LLMProjectID, config.LLMLocation)
+		// Initialize elastic retriever
+		elasticRetriever = elastic.NewRetriever(elasticClient, embeddingClient)
 	}
-
-	// Initialize embedding client
-	embeddingClient := llm.NewEmbeddingClient(config.LLMProjectID, config.LLMLocation)
-
-	// Initialize elastic retriever
-	elasticRetriever := elastic.NewRetriever(elasticClient, embeddingClient)
 
 	// Initialize auth client
 	authClient := auth.NewClient("http://localhost:8080") // Orchestrator's own URL
@@ -140,7 +153,7 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 		logger:           logger,
 		elasticClient:    elasticClient,
 		elasticRetriever: elasticRetriever,
-		embeddingClient:  embeddingClient,
+		embeddingClient:  nil, // Will be set when needed
 		adkClients:       adkClients,
 		authClient:       authClient,
 	}, nil
@@ -209,9 +222,30 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 	}()
 
 	// Execute each step
+	// Collect outputs from previous steps to pass to subsequent steps
+	previousOutputs := make(map[string]map[string]string)
+	
 	for i, step := range steps {
+		// Merge previous step outputs into current step inputs if needed
+		step = p.enrichStepInputs(step, previousOutputs)
+		
 		stepResult := p.executeStep(ctx, sessionID, step, orchestrator, i)
 		result.Steps = append(result.Steps, stepResult)
+		
+		// Store outputs from completed steps for use in subsequent steps
+		if stepResult.Status == "completed" {
+			previousOutputs[step.Name] = stepResult.Output
+			p.logger.WithFields(logrus.Fields{
+				"step":           step.Name,
+				"output_count":   len(stepResult.Output),
+				"has_lesson":     step.Name == "explainer" && stepResult.Output["lesson"] != "",
+			}).Info("Stored step outputs for use in subsequent steps")
+		} else {
+			p.logger.WithFields(logrus.Fields{
+				"step":   step.Name,
+				"status": stepResult.Status,
+			}).Warn("Step did not complete successfully, outputs not stored")
+		}
 
 		// Get quota information for SSE metadata
 		quotaInfo := make(map[string]interface{})
@@ -271,12 +305,26 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 
 		// Apply critic patch if this is the critic step
 		if step.Name == "critic" && stepResult.Status == "completed" {
-			if err := p.applyCriticPatch(ctx, sessionID, stepResult.Output, orchestrator); err != nil {
+			// Get the lesson from explainer output (stored in previousOutputs)
+			var lessonJSON string
+			if explainerOutput, exists := previousOutputs["explainer"]; exists {
+				if lesson, ok := explainerOutput["lesson"]; ok && lesson != "" {
+					lessonJSON = lesson
+				}
+			}
+			
+			if lessonJSON == "" {
 				p.logger.WithFields(logrus.Fields{
 					"session_id": sessionID,
-					"error":      err,
-				}).Error("Failed to apply critic patch")
-				// Continue execution even if critic patch fails
+				}).Warn("Cannot apply critic patch: lesson not found in explainer output")
+			} else {
+				if err := p.applyCriticPatch(ctx, sessionID, lessonJSON, stepResult.Output, orchestrator); err != nil {
+					p.logger.WithFields(logrus.Fields{
+						"session_id": sessionID,
+						"error":      err,
+					}).Error("Failed to apply critic patch")
+					// Continue execution even if critic patch fails
+				}
 			}
 		}
 	}
@@ -303,6 +351,30 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 		CompletedAt: result.CompletedAt,
 	}
 	orchestrator.UpdateSession(session)
+
+	// Track session completion for BrainPrint
+	if orchestrator.brainprintSvc != nil {
+		// Get user ID from session metadata or use session ID as user ID
+		userID := sessionID // Default to session ID
+		if userIDFromMeta, ok := session.Metadata["user_id"].(string); ok && userIDFromMeta != "" {
+			userID = userIDFromMeta
+		}
+
+		// Get explanation type from session metadata
+		explanationType := "standard"
+		if expType, ok := session.Metadata["explanation_type"].(string); ok && expType != "" {
+			explanationType = expType
+		}
+
+		// Track successful session
+		if err := orchestrator.brainprintSvc.TrackSession(ctx, userID, explanationType, true); err != nil {
+			p.logger.WithFields(logrus.Fields{
+				"session_id": sessionID,
+				"user_id":    userID,
+				"error":      err,
+			}).Warn("Failed to track session for BrainPrint")
+		}
+	}
 
 	// Broadcast final success event
 	orchestrator.BroadcastEvent(sessionID, SSEEvent{
@@ -378,7 +450,7 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 	}
 
 	// Execute step with retry logic
-	client, exists := p.adkClients[step.Agent]
+	_, exists := p.adkClients[step.Agent]
 	if !exists {
 		stepResult.Status = "failed"
 		stepResult.Error = fmt.Sprintf("agent %s not found", step.Agent)
@@ -427,35 +499,40 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 			}
 		}
 
-		// Get ID token for the target agent
+		// Try to get ID token for the target agent (optional - for GCP service-to-service auth)
 		token, err := p.authClient.GetIDToken(ctx, p.config.AgentBaseURLs[step.Agent])
+		var client *adk.Client
+		
 		if err != nil {
+			// Authentication failed (likely not running on GCP) - continue without auth
 			p.logger.WithFields(logrus.Fields{
 				"session_id": sessionID,
 				"step":       step.Name,
 				"agent":      step.Agent,
 				"error":      err,
-			}).Error("Failed to get ID token for agent")
-			stepResult.Status = "failed"
-			stepResult.Error = fmt.Sprintf("authentication failed: %v", err)
-			return stepResult
+			}).Warn("Failed to get ID token for agent, continuing without authentication")
+			
+			// Use the existing client without authentication
+			client = p.adkClients[step.Agent]
+		} else {
+			// Create authenticated client for this request
+			client = adk.NewClient(p.config.AgentBaseURLs[step.Agent],
+				adk.WithTimeout(p.config.StepTimeout),
+				adk.WithConfig(adk.TaskConfig{
+					Timeout:     p.config.StepTimeout,
+					MaxRetries:  p.config.MaxRetries,
+					RetryDelay:  p.config.RetryDelay,
+					BackoffType: "exponential",
+				}),
+				adk.WithLogger(p.logger),
+				adk.WithAuthToken(token),
+			)
 		}
 
-		// Create authenticated client for this request
-		authClient := adk.NewClient(p.config.AgentBaseURLs[step.Agent],
-			adk.WithTimeout(p.config.StepTimeout),
-			adk.WithConfig(adk.TaskConfig{
-				Timeout:     p.config.StepTimeout,
-				MaxRetries:  p.config.MaxRetries,
-				RetryDelay:  p.config.RetryDelay,
-				BackoffType: "exponential",
-			}),
-			adk.WithLogger(p.logger),
-			adk.WithAuthToken(token),
-		)
-
-		// Execute the task
-		response, err := authClient.DoTask(ctx, "/task", taskReq)
+		// Execute the task - construct full URL using baseURL from client
+		// DoTask expects a full URL, so we use the client's baseURL
+		fullURL := client.GetBaseURL() + "/task"
+		response, err := client.DoTask(ctx, fullURL, taskReq)
 		if err == nil {
 			// Success
 			stepResult.Status = "completed"
@@ -498,6 +575,15 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 
 // getContext retrieves relevant context using hybrid search
 func (p *Pipeline) getContext(ctx context.Context, sessionID, topic string) ([]ContextDoc, error) {
+	// Check if Elasticsearch is available
+	if p.elasticRetriever == nil {
+		p.logger.WithFields(logrus.Fields{
+			"session_id": sessionID,
+			"topic":      topic,
+		}).Info("Elasticsearch not available, skipping context retrieval")
+		return []ContextDoc{}, nil
+	}
+
 	p.logger.WithFields(logrus.Fields{
 		"session_id": sessionID,
 		"topic":      topic,
@@ -532,6 +618,87 @@ func (p *Pipeline) getContext(ctx context.Context, sessionID, topic string) ([]C
 	return contextDocs, nil
 }
 
+// enrichStepInputs merges outputs from previous steps into the current step's inputs
+// This allows steps like visualizer and critic to receive data from previous steps
+func (p *Pipeline) enrichStepInputs(step PipelineStep, previousOutputs map[string]map[string]string) PipelineStep {
+	// Create a copy of the step to avoid modifying the original
+	enrichedStep := step
+	
+	// Create a copy of inputs
+	enrichedInputs := make(map[string]string)
+	for k, v := range step.Inputs {
+		enrichedInputs[k] = v
+	}
+	
+	// Visualizer needs lesson from explainer
+	if step.Name == "visualizer" {
+		if explainerOutput, exists := previousOutputs["explainer"]; exists {
+			if lesson, ok := explainerOutput["lesson"]; ok && lesson != "" {
+				enrichedInputs["lesson"] = lesson
+				p.logger.WithFields(logrus.Fields{
+					"step":        step.Name,
+					"lesson_size": len(lesson),
+				}).Info("Added lesson from explainer to visualizer inputs")
+			} else {
+				p.logger.WithFields(logrus.Fields{
+					"step": step.Name,
+				}).Warn("Explainer output exists but lesson key is missing or empty")
+			}
+		} else {
+			p.logger.WithFields(logrus.Fields{
+				"step":              step.Name,
+				"available_outputs": getMapKeys(previousOutputs),
+			}).Warn("Explainer output not found in previous outputs")
+		}
+	}
+	
+	// Critic needs lesson from explainer
+	if step.Name == "critic" {
+		if explainerOutput, exists := previousOutputs["explainer"]; exists {
+			if lesson, ok := explainerOutput["lesson"]; ok && lesson != "" {
+				enrichedInputs["lesson"] = lesson
+				p.logger.WithFields(logrus.Fields{
+					"step":        step.Name,
+					"lesson_size": len(lesson),
+				}).Info("Added lesson from explainer to critic inputs")
+			} else {
+				p.logger.WithFields(logrus.Fields{
+					"step": step.Name,
+				}).Warn("Explainer output exists but lesson key is missing or empty")
+			}
+		} else {
+			p.logger.WithFields(logrus.Fields{
+				"step":              step.Name,
+				"available_outputs": getMapKeys(previousOutputs),
+			}).Warn("Explainer output not found in previous outputs")
+		}
+	}
+	
+	// Explainer can optionally use outline and misconceptions from summarizer
+	if step.Name == "explainer" {
+		if summarizerOutput, exists := previousOutputs["summarizer"]; exists {
+			if outline, ok := summarizerOutput["outline"]; ok && outline != "" {
+				enrichedInputs["outline"] = outline
+			}
+			if misconceptions, ok := summarizerOutput["misconceptions"]; ok && misconceptions != "" {
+				enrichedInputs["misconceptions"] = misconceptions
+			}
+		}
+	}
+	
+	enrichedStep.Inputs = enrichedInputs
+	return enrichedStep
+}
+
+// getMapKeys returns the keys of a map as a slice of strings
+func getMapKeys(m map[string]map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // formatContext formats context documents for agent consumption
 func (p *Pipeline) formatContext(docs []ContextDoc) string {
 	if len(docs) == 0 {
@@ -549,13 +716,14 @@ func (p *Pipeline) formatContext(docs []ContextDoc) string {
 }
 
 // applyCriticPatch applies critic feedback to the lesson JSON
-func (p *Pipeline) applyCriticPatch(ctx context.Context, sessionID string, criticOutput map[string]string, orchestrator *Orchestrator) error {
+// lessonJSON: The lesson JSON from the explainer step
+// criticOutput: The critic's output containing critique and patch_plan
+func (p *Pipeline) applyCriticPatch(ctx context.Context, sessionID string, lessonJSON string, criticOutput map[string]string, orchestrator *Orchestrator) error {
 	p.logger.WithField("session_id", sessionID).Info("Applying critic patch")
 
-	// Extract lesson JSON from critic output
-	lessonJSON, exists := criticOutput["lesson"]
-	if !exists {
-		return fmt.Errorf("no lesson found in critic output")
+	// Validate lesson JSON is provided
+	if lessonJSON == "" {
+		return fmt.Errorf("lesson JSON is required to apply critic patch")
 	}
 
 	// Parse the lesson JSON
@@ -564,10 +732,30 @@ func (p *Pipeline) applyCriticPatch(ctx context.Context, sessionID string, criti
 		return fmt.Errorf("failed to parse lesson JSON: %w", err)
 	}
 
-	// Apply critic suggestions (this would be more sophisticated in a real implementation)
-	// For now, we'll just add a "critic_reviewed" flag
+	// Apply patch plan if available
+	if patchPlanJSON, exists := criticOutput["patch_plan"]; exists && patchPlanJSON != "" {
+		// Use the ApplyPatchPlan function to apply the patch plan
+		patchedLesson, err := ApplyPatchPlan(lessonJSON, patchPlanJSON)
+		if err != nil {
+			p.logger.WithFields(logrus.Fields{
+				"session_id": sessionID,
+				"error":      err,
+			}).Warn("Failed to apply patch plan, using original lesson")
+		} else {
+			// Use the patched lesson
+			lessonJSON = patchedLesson
+			// Re-parse the patched lesson
+			if err := json.Unmarshal([]byte(lessonJSON), &lesson); err != nil {
+				return fmt.Errorf("failed to parse patched lesson JSON: %w", err)
+			}
+		}
+	}
+	
+	// Add critic metadata
 	lesson["critic_reviewed"] = true
-	lesson["critic_suggestions"] = criticOutput["suggestions"]
+	if critiqueJSON, exists := criticOutput["critique"]; exists {
+		lesson["critique"] = critiqueJSON
+	}
 
 	// Update the lesson in the session
 	session, exists := orchestrator.GetSession(sessionID)
@@ -646,9 +834,11 @@ func (p *Pipeline) SetConfig(config PipelineConfig) {
 
 // Health checks the health of all pipeline components
 func (p *Pipeline) Health(ctx context.Context) error {
-	// Check Elasticsearch health
-	if err := p.elasticClient.Health(ctx); err != nil {
-		return fmt.Errorf("elasticsearch health check failed: %w", err)
+	// Check Elasticsearch health (if available)
+	if p.elasticClient != nil {
+		if err := p.elasticClient.Health(ctx); err != nil {
+			return fmt.Errorf("elasticsearch health check failed: %w", err)
+		}
 	}
 
 	// Check ADK clients health

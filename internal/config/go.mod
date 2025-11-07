@@ -1,4 +1,4 @@
-module github.com/explainiq/agent/internal/config
+module github.com/InnoFusionTech/ExplainIQ/internal/config
 
 go 1.22
 

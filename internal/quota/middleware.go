@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/creduntvitam/explainiq/internal/cost_tracker"
-	"github.com/creduntvitam/explainiq/internal/rate_limiter"
+	"github.com/InnoFusionTech/ExplainIQ/internal/cost_tracker"
+	"github.com/InnoFusionTech/ExplainIQ/internal/rate_limiter"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -66,47 +66,56 @@ func (qm *QuotaManager) QuotaMiddleware() gin.HandlerFunc {
 			sessionID = fmt.Sprintf("ip:%s", ip)
 		}
 
-		// Check cost limits
-		costs, exceeded, err := qm.costTracker.CheckCostLimits(c.Request.Context(), sessionID, qm.costLimits)
-		if err != nil {
-			qm.logger.WithFields(logrus.Fields{
-				"session_id": sessionID,
-				"error":      err,
-			}).Error("Failed to check cost limits")
-			// Continue without cost checking if there's an error
-		} else if exceeded {
-			qm.logger.WithFields(logrus.Fields{
-				"session_id":     sessionID,
-				"total_cost":     costs.TotalCost,
-				"max_cost":       qm.costLimits.MaxTotalCost,
-				"llm_cost":       costs.TotalLLMCost,
-				"max_llm_cost":   qm.costLimits.MaxLLMCost,
-				"image_cost":     costs.TotalImageCost,
-				"max_image_cost": qm.costLimits.MaxImageCost,
-			}).Warn("Cost limit exceeded")
+		// Check cost limits (skip if cost tracker is not available)
+		var costs *cost_tracker.SessionCosts
+		var exceeded bool
+		var err error
+		
+		if qm.costTracker != nil {
+			costs, exceeded, err = qm.costTracker.CheckCostLimits(c.Request.Context(), sessionID, qm.costLimits)
+			if err != nil {
+				qm.logger.WithFields(logrus.Fields{
+					"session_id": sessionID,
+					"error":      err,
+				}).Error("Failed to check cost limits")
+				// Continue without cost checking if there's an error
+			} else if exceeded {
+				qm.logger.WithFields(logrus.Fields{
+					"session_id":     sessionID,
+					"total_cost":     costs.TotalCost,
+					"max_cost":       qm.costLimits.MaxTotalCost,
+					"llm_cost":       costs.TotalLLMCost,
+					"max_llm_cost":   qm.costLimits.MaxLLMCost,
+					"image_cost":     costs.TotalImageCost,
+					"max_image_cost": qm.costLimits.MaxImageCost,
+				}).Warn("Cost limit exceeded")
 
 			// Get remaining quota for response
-			quotaRemaining, _ := qm.costTracker.GetQuotaRemaining(c.Request.Context(), sessionID, qm.costLimits)
+			var quotaRemaining map[string]interface{}
+			if qm.costTracker != nil {
+				quotaRemaining, _ = qm.costTracker.GetQuotaRemaining(c.Request.Context(), sessionID, qm.costLimits)
+			}
 
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":           "Cost limit exceeded",
-				"message":         "You have exceeded your usage quota. Please try again later or contact support.",
-				"quota_type":      "cost_limit",
-				"quota_remaining": quotaRemaining,
-				"current_costs": gin.H{
-					"total_cost":  costs.TotalCost,
-					"llm_cost":    costs.TotalLLMCost,
-					"image_cost":  costs.TotalImageCost,
-					"llm_calls":   costs.LLMCalls,
-					"image_calls": costs.ImageCalls,
-				},
-			})
-			c.Abort()
-			return
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":           "Cost limit exceeded",
+					"message":         "You have exceeded your usage quota. Please try again later or contact support.",
+					"quota_type":      "cost_limit",
+					"quota_remaining": quotaRemaining,
+					"current_costs": gin.H{
+						"total_cost":  costs.TotalCost,
+						"llm_cost":    costs.TotalLLMCost,
+						"image_cost":  costs.TotalImageCost,
+						"llm_calls":   costs.LLMCalls,
+						"image_calls": costs.ImageCalls,
+					},
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		// Add quota information to context
-		if costs != nil {
+		if costs != nil && qm.costTracker != nil {
 			quotaRemaining, _ := qm.costTracker.GetQuotaRemaining(c.Request.Context(), sessionID, qm.costLimits)
 			c.Set("quota_remaining", quotaRemaining)
 			c.Set("current_costs", costs)
@@ -118,6 +127,11 @@ func (qm *QuotaManager) QuotaMiddleware() gin.HandlerFunc {
 
 // TrackLLMCall tracks an LLM call and checks limits
 func (qm *QuotaManager) TrackLLMCall(ctx context.Context, sessionID, userID, ipAddress, model string, inputTokens, outputTokens int) error {
+	// Skip tracking if cost tracker is not available
+	if qm.costTracker == nil {
+		return nil
+	}
+
 	// Track the cost
 	if err := qm.costTracker.TrackLLMCall(ctx, sessionID, userID, ipAddress, model, inputTokens, outputTokens); err != nil {
 		return fmt.Errorf("failed to track LLM call: %w", err)
@@ -139,6 +153,11 @@ func (qm *QuotaManager) TrackLLMCall(ctx context.Context, sessionID, userID, ipA
 
 // TrackImageCall tracks an image generation call and checks limits
 func (qm *QuotaManager) TrackImageCall(ctx context.Context, sessionID, userID, ipAddress string, imageCount int) error {
+	// Skip tracking if cost tracker is not available
+	if qm.costTracker == nil {
+		return nil
+	}
+
 	// Track the cost
 	if err := qm.costTracker.TrackImageCall(ctx, sessionID, userID, ipAddress, imageCount); err != nil {
 		return fmt.Errorf("failed to track image call: %w", err)
@@ -160,6 +179,17 @@ func (qm *QuotaManager) TrackImageCall(ctx context.Context, sessionID, userID, i
 
 // GetQuotaInfo returns quota information for a session
 func (qm *QuotaManager) GetQuotaInfo(ctx context.Context, sessionID string) (map[string]interface{}, error) {
+	// If cost tracker is not available, return basic info
+	if qm.costTracker == nil {
+		return map[string]interface{}{
+			"session_id":      sessionID,
+			"current_costs":   nil,
+			"quota_remaining": nil,
+			"limits":          qm.costLimits,
+			"cost_tracking":   false,
+		}, nil
+	}
+
 	costs, err := qm.costTracker.GetSessionCosts(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -175,6 +205,7 @@ func (qm *QuotaManager) GetQuotaInfo(ctx context.Context, sessionID string) (map
 		"current_costs":   costs,
 		"quota_remaining": quotaRemaining,
 		"limits":          qm.costLimits,
+		"cost_tracking":   true,
 	}, nil
 }
 

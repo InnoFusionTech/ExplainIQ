@@ -29,6 +29,7 @@ services:
       - GIN_MODE=debug
       - LOG_LEVEL=debug
       - ENVIRONMENT=development
+      - REQUIRE_AUTH=false
     volumes:
       - ./cmd/agent-summarizer:/app/cmd/agent-summarizer
       - ./internal:/app/internal
@@ -47,6 +48,7 @@ services:
       - GIN_MODE=debug
       - LOG_LEVEL=debug
       - ENVIRONMENT=development
+      - REQUIRE_AUTH=false
     volumes:
       - ./cmd/agent-explainer:/app/cmd/agent-explainer
       - ./internal:/app/internal
@@ -65,6 +67,7 @@ services:
       - GIN_MODE=debug
       - LOG_LEVEL=debug
       - ENVIRONMENT=development
+      - REQUIRE_AUTH=false
     volumes:
       - ./cmd/agent-critic:/app/cmd/agent-critic
       - ./internal:/app/internal
@@ -83,26 +86,9 @@ services:
       - GIN_MODE=debug
       - LOG_LEVEL=debug
       - ENVIRONMENT=development
+      - REQUIRE_AUTH=false
     volumes:
       - ./cmd/agent-visualizer:/app/cmd/agent-visualizer
-      - ./internal:/app/internal
-    networks:
-      - explainiq-network
-
-  # Go Frontend Service
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    ports:
-      - "8085:8085"
-    environment:
-      - PORT=8085
-      - GIN_MODE=debug
-      - LOG_LEVEL=debug
-      - ENVIRONMENT=development
-    volumes:
-      - ./cmd/frontend:/app/cmd/frontend
       - ./internal:/app/internal
     networks:
       - explainiq-network

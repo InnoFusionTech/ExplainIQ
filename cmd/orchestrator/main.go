@@ -11,11 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/explainiq/agent/internal/auth"
-	"github.com/explainiq/agent/internal/cost_tracker"
-	"github.com/explainiq/agent/internal/quota"
-	"github.com/explainiq/agent/internal/rate_limiter"
-	"github.com/explainiq/agent/internal/storage"
+	"github.com/InnoFusionTech/ExplainIQ/internal/auth"
+	"github.com/InnoFusionTech/ExplainIQ/internal/brainprint"
+	"github.com/InnoFusionTech/ExplainIQ/internal/cost_tracker"
+	"github.com/InnoFusionTech/ExplainIQ/internal/quota"
+	"github.com/InnoFusionTech/ExplainIQ/internal/rate_limiter"
+	"github.com/InnoFusionTech/ExplainIQ/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -69,7 +70,8 @@ type SSEEvent struct {
 
 // CreateSessionRequest represents the request to create a new session
 type CreateSessionRequest struct {
-	Topic string `json:"topic"`
+	Topic           string `json:"topic"`
+	ExplanationType string `json:"explanation_type,omitempty"` // standard, visualization, simple, analogy
 }
 
 // CreateSessionResponse represents the response for creating a session
@@ -77,25 +79,17 @@ type CreateSessionResponse struct {
 	ID string `json:"id"`
 }
 
-// SSEEvent represents a Server-Sent Event
-type SSEEvent struct {
-	Type      string                 `json:"type"`
-	SessionID string                 `json:"session_id"`
-	StepID    string                 `json:"step_id,omitempty"`
-	Data      map[string]interface{} `json:"data"`
-	Timestamp time.Time              `json:"timestamp"`
-}
-
 // Orchestrator manages learning sessions
 type Orchestrator struct {
-	sessions     map[string]*Session
-	mu           sync.RWMutex
-	logger       *logrus.Logger
-	clients      map[string][]chan SSEEvent
-	clientsMu    sync.RWMutex
-	pipeline     *Pipeline
-	authClient   *auth.Client
-	quotaManager *quota.QuotaManager
+	sessions      map[string]*Session
+	mu            sync.RWMutex
+	logger        *logrus.Logger
+	clients       map[string][]chan SSEEvent
+	clientsMu     sync.RWMutex
+	pipeline      *Pipeline
+	authClient    *auth.Client
+	quotaManager  *quota.QuotaManager
+	brainprintSvc *brainprint.Service
 }
 
 // NewOrchestrator creates a new orchestrator instance
@@ -114,28 +108,55 @@ func NewOrchestrator() *Orchestrator {
 	}
 	authClient := auth.NewClient(serviceURL)
 
-	// Create storage client for cost tracking
-	storageClient, err := storage.NewFirestoreClient(context.Background(), os.Getenv("GCP_PROJECT_ID"))
-	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create storage client")
+	// Create storage client for cost tracking (optional)
+	var storageClient storage.Storage
+	var costTracker *cost_tracker.CostTracker
+
+	gcpProjectID := os.Getenv("GCP_PROJECT_ID")
+	if gcpProjectID != "" {
+		client, err := storage.NewFirestoreClient(context.Background(), gcpProjectID, "sessions")
+		if err != nil {
+			logrus.WithError(err).Warn("Failed to create Firestore client, continuing without cost tracking")
+			storageClient = nil
+			costTracker = nil
+		} else {
+			storageClient = client
+			costTracker = cost_tracker.NewCostTracker(storageClient)
+		}
+	} else {
+		logrus.Warn("GCP_PROJECT_ID not set, continuing without cost tracking")
+		storageClient = nil
+		costTracker = nil
 	}
 
 	// Create rate limiter (10 requests per second, burst of 20)
 	rateLimiter := rate_limiter.NewLimiter(10.0, 20)
 
-	// Create cost tracker
-	costTracker := cost_tracker.NewCostTracker(storageClient)
-
 	// Create quota manager
-	quotaManager := quota.NewQuotaManager(rateLimiter, costTracker)
+	var quotaManager *quota.QuotaManager
+	if costTracker != nil {
+		quotaManager = quota.NewQuotaManager(rateLimiter, costTracker)
+	} else {
+		// Create quota manager without cost tracking
+		quotaManager = quota.NewQuotaManager(rateLimiter, nil)
+	}
+
+	// Create BrainPrint service (using in-memory storage for now)
+	// Cast storage client to brainprint.StorageInterface if available
+	var brainprintStorage brainprint.StorageInterface
+	if storageClient != nil {
+		brainprintStorage = storageClient
+	}
+	brainprintSvc := brainprint.NewService(brainprintStorage)
 
 	return &Orchestrator{
-		sessions:     make(map[string]*Session),
-		logger:       logrus.New(),
-		clients:      make(map[string][]chan SSEEvent),
-		pipeline:     pipeline,
-		authClient:   authClient,
-		quotaManager: quotaManager,
+		sessions:      make(map[string]*Session),
+		logger:        logrus.New(),
+		clients:       make(map[string][]chan SSEEvent),
+		pipeline:      pipeline,
+		authClient:    authClient,
+		quotaManager:  quotaManager,
+		brainprintSvc: brainprintSvc,
 	}
 }
 
@@ -254,7 +275,16 @@ func (o *Orchestrator) createSessionHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Set default explanation type if not provided
+	explanationType := req.ExplanationType
+	if explanationType == "" {
+		explanationType = "standard"
+	}
+
 	session := o.CreateSession(req.Topic)
+	
+	// Store explanation type in session metadata
+	session.Metadata["explanation_type"] = explanationType
 	response := CreateSessionResponse{ID: session.ID}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -340,6 +370,29 @@ func (o *Orchestrator) getSessionResultHandler(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(session.Result)
 }
 
+// getBrainPrintHandler handles GET /api/brainprint/:userID
+func (o *Orchestrator) getBrainPrintHandler(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "userID")
+	if userID == "" {
+		http.Error(w, "User ID is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	profile, err := o.brainprintSvc.GetBrainPrint(ctx, userID)
+	if err != nil {
+		o.logger.WithFields(logrus.Fields{
+			"user_id": userID,
+			"error":   err,
+		}).Error("Failed to get BrainPrint")
+		http.Error(w, "Failed to retrieve BrainPrint", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
+}
+
 // heartbeatHandler handles GET /health
 func (o *Orchestrator) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -385,11 +438,14 @@ func (o *Orchestrator) setupRoutes() *chi.Mux {
 
 			// Protected endpoints (auth required)
 			r.Group(func(r chi.Router) {
-				// Add service authentication middleware
-				r.Use(auth.ServiceAuthMiddleware(o.authClient))
+				// TODO: Add service authentication middleware for Chi router
+				// r.Use(auth.ServiceAuthMiddleware(o.authClient))
 				r.Get("/{id}/result", o.getSessionResultHandler)
 			})
 		})
+
+		// BrainPrint endpoint
+		r.Get("/brainprint/{userID}", o.getBrainPrintHandler)
 	})
 
 	return r

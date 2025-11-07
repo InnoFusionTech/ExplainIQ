@@ -12,16 +12,18 @@ import (
 
 // MockClient represents an in-memory mock implementation of the storage client
 type MockClient struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	logger   *logrus.Logger
+	sessions  map[string]*Session
+	kvStorage map[string][]byte
+	mu        sync.RWMutex
+	logger    *logrus.Logger
 }
 
 // NewMockClient creates a new mock storage client
 func NewMockClient() *MockClient {
 	return &MockClient{
-		sessions: make(map[string]*Session),
-		logger:   logrus.New(),
+		sessions:  make(map[string]*Session),
+		kvStorage: make(map[string][]byte),
+		logger:    logrus.New(),
 	}
 }
 
@@ -90,8 +92,8 @@ func (m *MockClient) SaveStep(ctx context.Context, sessionID, step string, paylo
 	session.UpdatedAt = now
 
 	m.logger.WithFields(logrus.Fields{
-		"session_id": sessionID,
-		"step":       step,
+		"session_id":  sessionID,
+		"step":        step,
 		"duration_ms": durationMs,
 	}).Info("Step saved to mock storage")
 
@@ -162,8 +164,8 @@ func (m *MockClient) GetSession(ctx context.Context, sessionID string) (*Session
 	}
 
 	m.logger.WithFields(logrus.Fields{
-		"session_id": sessionID,
-		"status":     session.Status,
+		"session_id":  sessionID,
+		"status":      session.Status,
 		"steps_count": len(session.Steps),
 	}).Debug("Session retrieved from mock storage")
 
@@ -272,6 +274,7 @@ func (m *MockClient) Clear() {
 	defer m.mu.Unlock()
 
 	m.sessions = make(map[string]*Session)
+	m.kvStorage = make(map[string][]byte)
 	m.logger.Info("Mock storage cleared")
 }
 
@@ -315,6 +318,46 @@ func (m *MockClient) GetAllSessions() map[string]*Session {
 	return sessions
 }
 
+// Get retrieves a value by key from memory
+func (m *MockClient) Get(ctx context.Context, key string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
+	value, exists := m.kvStorage[key]
+	if !exists {
+		return nil, fmt.Errorf("key %s not found", key)
+	}
 
+	// Return a copy to avoid race conditions
+	valueCopy := make([]byte, len(value))
+	copy(valueCopy, value)
 
+	return valueCopy, nil
+}
+
+// Set stores a value by key in memory
+func (m *MockClient) Set(ctx context.Context, key string, value []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Store a copy to avoid race conditions
+	valueCopy := make([]byte, len(value))
+	copy(valueCopy, value)
+	m.kvStorage[key] = valueCopy
+
+	return nil
+}
+
+// Delete removes a value by key from memory
+func (m *MockClient) Delete(ctx context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, exists := m.kvStorage[key]
+	if !exists {
+		return fmt.Errorf("key %s not found", key)
+	}
+
+	delete(m.kvStorage, key)
+	return nil
+}

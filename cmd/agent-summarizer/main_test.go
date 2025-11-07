@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creduntvitam/explainiq/internal/adk"
-	"github.com/creduntvitam/explainiq/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +26,30 @@ type MockGeminiClient struct {
 func (m *MockGeminiClient) Summarize(ctx context.Context, topic, context string) (*llm.SummarizeResponse, error) {
 	args := m.Called(ctx, topic, context)
 	return args.Get(0).(*llm.SummarizeResponse), args.Error(1)
+}
+
+func (m *MockGeminiClient) ExplainWithOG(ctx context.Context, topic, outline, misconceptions, context string) (*llm.OGLesson, error) {
+	args := m.Called(ctx, topic, outline, misconceptions, context)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.OGLesson), args.Error(1)
+}
+
+func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*llm.CritiqueResponse, error) {
+	args := m.Called(ctx, lessonJSON)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.CritiqueResponse), args.Error(1)
+}
+
+func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
+	args := m.Called(ctx, lessonJSON, sessionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.VisualizeResponse), args.Error(1)
 }
 
 func (m *MockGeminiClient) Health(ctx context.Context) error {

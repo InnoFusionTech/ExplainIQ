@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/creduntvitam/explainiq/internal/adk"
-	"github.com/creduntvitam/explainiq/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -30,6 +30,14 @@ func (m *MockGeminiClient) ExplainWithOG(ctx context.Context, topic, outline, mi
 		return m.explainWithOGFunc(ctx, topic, outline, misconceptions, context)
 	}
 	return nil, errors.New("mock error")
+}
+
+func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*llm.CritiqueResponse, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (m *MockGeminiClient) Health(ctx context.Context) error {
@@ -63,13 +71,12 @@ func TestExplainerService_ProcessTask_Success(t *testing.T) {
 		},
 	}
 
-	// Create service with mock client
+	// Create service with mock client, using interface type if needed for compatibility
+	var geminiInterface llm.GeminiClientInterface = mockClient
 	service := &ExplainerService{
-		geminiClient: mockClient,
+		geminiClient: geminiInterface,
 		logger:       logrus.New(),
 	}
-
-	// Create test request
 	req := adk.TaskRequest{
 		SessionID: "test-session",
 		Step:      "explainer",

@@ -2,8 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import puppeteer from 'puppeteer';
 import { Storage } from '@google-cloud/storage';
 import { PDFResponse, OGLesson, ImageRef } from '../../../../types';
-
-const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8080';
+import { getOrchestratorURL } from '../../../../utils/orchestrator';
 const GCS_BUCKET = process.env.GCS_BUCKET || 'explainiq-pdfs';
 const GCS_PROJECT_ID = process.env.GCS_PROJECT_ID || '';
 
@@ -28,6 +27,9 @@ export default async function handler(
 
   try {
     // Fetch session data from orchestrator
+    const ORCHESTRATOR_URL = getOrchestratorURL();
+    console.log(`[PDF Generation] Fetching from: ${ORCHESTRATOR_URL}/api/sessions/result?id=${sessionId}`);
+    
     const sessionResponse = await fetch(`${ORCHESTRATOR_URL}/api/sessions/result?id=${sessionId}`);
     
     if (!sessionResponse.ok) {
@@ -68,7 +70,9 @@ export default async function handler(
 
     // Get file size
     const [metadata] = await file.getMetadata();
-    const size = parseInt(metadata.size || '0');
+    const size = typeof metadata.size === 'string' 
+      ? parseInt(metadata.size) 
+      : metadata.size || 0;
 
     const response: PDFResponse = {
       pdf_url: signedUrl,

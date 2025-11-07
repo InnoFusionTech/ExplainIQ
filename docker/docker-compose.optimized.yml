@@ -1,0 +1,170 @@
+services:
+  # Orchestrator Service - Main API and workflow coordinator
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.orchestrator
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - PORT=8080
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://orchestrator:8080
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Summarizer Service
+  agent-summarizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-summarizer
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      - PORT=8081
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-summarizer:8081
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Explainer Service
+  agent-explainer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-explainer
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env
+    environment:
+      - PORT=8082
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-explainer:8082
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Critic Service
+  agent-critic:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-critic
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    environment:
+      - PORT=8083
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-critic:8083
+      - REQUIRE_AUTH=false
+      - WRITE_TIMEOUT=5m
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Agent Visualizer Service
+  agent-visualizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent-visualizer
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "8084:8084"
+    env_file:
+      - .env
+    environment:
+      - PORT=8084
+      - GIN_MODE=debug
+      - LOG_LEVEL=info
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERVICE_URL=http://agent-visualizer:8084
+      - REQUIRE_AUTH=false
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - explainiq-network
+
+  # Next.js Frontend Service (Primary Frontend)
+  frontend-nextjs:
+    build:
+      context: ../cmd/frontend/nextjs
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+      - NEXT_TELEMETRY_DISABLED=1
+    depends_on:
+      - orchestrator
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - explainiq-network
+
+networks:
+  explainiq-network:
+    driver: bridge
+
+volumes:
+  explainiq-data:
+    driver: local
+

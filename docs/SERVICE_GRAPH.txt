@@ -1,0 +1,271 @@
+================================================================================
+                    EXPLAINIQ SERVICE ARCHITECTURE GRAPH
+================================================================================
+
+EXTERNAL CLIENTS
+      |
+      | HTTP Requests
+      v
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FRONTEND LAYER                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   Go Frontend (Port 8085)              Next.js Frontend (Port 3000)         │
+│   • Static Files                      • React UI                             │
+│   • HTML Templates                    • API Routes                           │
+│   • Basic Routes                      • PDF Generation                        │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                           |
+                           | HTTP API Calls
+                           v
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        ORCHESTRATION LAYER                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│                    ORCHESTRATOR SERVICE (Port 8080)                          │
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │  Features:                                                           │  │
+│   │  • Session Management                                                │  │
+│   │  • Pipeline Orchestration                                            │  │
+│   │  • SSE (Server-Sent Events)                                          │  │
+│   │  • Authentication (JWT)                                              │  │
+│   │  • Quota Management                                                  │  │
+│   │  • Rate Limiting                                                     │  │
+│   │  • Cost Tracking                                                     │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+│   Pipeline Workflow:                                                         │
+│   1. Summarizer → Creates outline, identifies misconceptions               │
+│   2. Explainer → Generates lesson content                                   │
+│   3. Critic → Reviews and suggests improvements                             │
+│   4. Visualizer → Creates visualizations                                    │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                           |
+                           | Coordinates Pipeline
+                           |
+        ┌──────────────────┼──────────────────┐
+        |                  |                  |
+        v                  v                  v
+
+┌──────────────────────────────┐  ┌──────────────────────────────┐
+│   AGENT LAYER                │  │   AGENT LAYER                │
+├──────────────────────────────┤  ├──────────────────────────────┤
+│                              │  │                              │
+│  Summarizer (Port 8081)     │  │  Explainer (Port 8082)       │
+│                              │  │                              │
+│  • Topic Analysis            │  │  • Lesson Generation         │
+│  • Outline Creation          │  │  • Explanations             │
+│  • Misconception Detection   │  │  • Step-by-step Guides       │
+│                              │  │                              │
+└──────────────────────────────┘  └──────────────────────────────┘
+        |                                     |
+        |                                     |
+        +─────────────────────────────────────+
+                           |
+                           |
+        ┌──────────────────┼──────────────────┐
+        |                  |                  |
+        v                  v                  v
+
+┌──────────────────────────────┐  ┌──────────────────────────────┐
+│   AGENT LAYER                │  │   AGENT LAYER                │
+├──────────────────────────────┤  ├──────────────────────────────┤
+│                              │  │                              │
+│  Critic (Port 8083)         │  │  Visualizer (Port 8084)      │
+│                              │  │                              │
+│  • Quality Review            │  │  • Diagrams                   │
+│  • Issue Detection           │  │  • Visual Aids                │
+│  • Patch Plan Generation     │  │  • Infographics               │
+│                              │  │                              │
+└──────────────────────────────┘  └──────────────────────────────┘
+                           |
+                           | All use
+                           v
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL SERVICES                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   Google Gemini AI (Required)        Elasticsearch (Optional)                │
+│   • LLM API                         • Context Retrieval                      │
+│   • Text Generation                 • Document Search                        │
+│   • Embeddings                      • Knowledge Base                         │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                         SERVICE COMMUNICATION FLOW
+================================================================================
+
+Client Request Flow:
+───────────────────
+
+1. Client → Frontend (HTTP POST with topic)
+           |
+           v
+2. Frontend → Orchestrator (POST /api/sessions)
+           |
+           v
+3. Orchestrator → Creates Session → Starts Pipeline
+           |
+           ├──→ Summarizer (8081) → Returns outline, misconceptions
+           |
+           ├──→ Explainer (8082) → Returns lesson content
+           |
+           ├──→ Critic (8083) → Returns critique, patch plan
+           |
+           └──→ Visualizer (8084) → Returns visualizations
+           |
+           v
+4. Orchestrator → Aggregates Results → Frontend (SSE Stream)
+           |
+           v
+5. Frontend → Client (Response / Real-time Updates)
+
+================================================================================
+                            SERVICE DEPENDENCIES
+================================================================================
+
+Orchestrator (8080)
+├── Agent Dependencies:
+│   ├── agent-summarizer (8081)
+│   ├── agent-explainer (8082)
+│   ├── agent-critic (8083)
+│   └── agent-visualizer (8084)
+│
+├── Internal Dependencies:
+│   ├── auth (JWT authentication)
+│   ├── quota (usage limits)
+│   ├── rate_limiter (rate limiting)
+│   ├── cost_tracker (cost tracking)
+│   └── storage (session storage)
+│
+└── Optional Dependencies:
+    ├── Elasticsearch (context retrieval)
+    └── Google Cloud Metadata (authentication)
+
+Agent Services (8081-8084)
+├── External Dependencies:
+│   └── Google Gemini API (via internal/llm)
+│
+└── Internal Dependencies:
+    ├── adk (Agent Development Kit)
+    ├── auth (service authentication)
+    └── llm (LLM client)
+
+Frontend Services (8085, 3000)
+└── Dependencies:
+    └── Orchestrator (8080)
+
+================================================================================
+                              PORT ALLOCATION
+================================================================================
+
+Service                Port    Health Endpoint      Description
+─────────────────────  ──────  ──────────────────  ──────────────────────────
+Orchestrator           8080    /health              Main API coordinator
+Agent Summarizer       8081    /health              AI summarization
+Agent Explainer        8082    /health              AI explanation
+Agent Critic           8083    /healthz             AI critique
+Agent Visualizer       8084    /health              AI visualization
+Frontend (Go)          8085    /healthz             Go web frontend
+Frontend (Next.js)     3000    /                    React/Next.js frontend
+
+================================================================================
+                            NETWORK TOPOLOGY
+================================================================================
+
+Docker Network: explainiq-network (bridge driver)
+│
+├── Orchestrator (http://orchestrator:8080)
+├── Agent Summarizer (http://agent-summarizer:8081)
+├── Agent Explainer (http://agent-explainer:8082)
+├── Agent Critic (http://agent-critic:8083)
+├── Agent Visualizer (http://agent-visualizer:8084)
+└── Frontend (http://frontend:8085)
+
+================================================================================
+                            DATA FLOW SEQUENCE
+================================================================================
+
+1.  Client Request
+    │
+    ├── POST /api/sessions { "topic": "..." }
+    │
+    ▼
+2.  Orchestrator
+    │
+    ├── Creates Session ID
+    ├── Starts Pipeline Execution
+    │
+    ▼
+3.  Pipeline Step 1: Summarizer
+    │
+    ├── POST /task → agent-summarizer:8081
+    ├── Input: topic
+    └── Output: outline, misconceptions
+    │
+    ▼
+4.  Pipeline Step 2: Explainer
+    │
+    ├── POST /task → agent-explainer:8082
+    ├── Input: outline, misconceptions
+    └── Output: lesson content
+    │
+    ▼
+5.  Pipeline Step 3: Critic
+    │
+    ├── POST /task → agent-critic:8083
+    ├── Input: lesson content
+    └── Output: critique, patch plan
+    │
+    ▼
+6.  Pipeline Step 4: Visualizer
+    │
+    ├── POST /task → agent-visualizer:8084
+    ├── Input: lesson content
+    └── Output: visualizations
+    │
+    ▼
+7.  Orchestrator
+    │
+    ├── Aggregates all results
+    ├── Updates session status
+    └── Streams via SSE / Returns final result
+    │
+    ▼
+8.  Client Response
+    │
+    └── Final result with lesson, critique, visualizations
+
+================================================================================
+                         AUTHENTICATION FLOW
+================================================================================
+
+Service-to-Service Authentication:
+───────────────────────────────────
+
+1. Orchestrator → Google Metadata Server
+   └── Get ID token for target service
+
+2. Orchestrator → Agent Service
+   └── HTTP Request with Bearer token
+       Authorization: Bearer <JWT_TOKEN>
+
+3. Agent Service → Google Public Keys
+   └── Verify JWT signature
+
+4. Agent Service → Process Request
+   └── Validate token claims & execute task
+
+================================================================================
+
+
+
+
+

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/creduntvitam/explainiq/internal/storage"
+	"github.com/InnoFusionTech/ExplainIQ/internal/storage"
 	"github.com/sirupsen/logrus"
 )
 

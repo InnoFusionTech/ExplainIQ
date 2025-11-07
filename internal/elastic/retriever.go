@@ -3,50 +3,49 @@ package elastic
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
-	"github.com/creduntvitam/explainiq/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/sirupsen/logrus"
 )
 
 // Retriever represents a hybrid search retriever combining BM25 and vector search
 type Retriever struct {
-	client        *Client
+	client          *Client
 	embeddingClient *llm.EmbeddingClient
-	logger        *logrus.Logger
-	bm25Weight    float64
-	vectorWeight  float64
-	mmrLambda     float64
+	logger          *logrus.Logger
+	bm25Weight      float64
+	vectorWeight    float64
+	mmrLambda       float64
 }
 
-// SearchResult represents a search result with combined scores
-type SearchResult struct {
-	Doc     Doc     `json:"doc"`
-	Score   float64 `json:"score"`
-	BM25Score float64 `json:"bm25_score"`
+// SearchHit represents a search result with combined scores
+type SearchHit struct {
+	Doc         Doc     `json:"doc"`
+	Score       float64 `json:"score"`
+	BM25Score   float64 `json:"bm25_score"`
 	VectorScore float64 `json:"vector_score"`
-	Snippet string  `json:"snippet"`
+	Snippet     string  `json:"snippet"`
 }
 
 // HybridSearchConfig represents configuration for hybrid search
 type HybridSearchConfig struct {
-	BM25Weight    float64 `json:"bm25_weight"`    // Weight for BM25 score (default: 0.3)
-	VectorWeight  float64 `json:"vector_weight"`  // Weight for vector score (default: 0.7)
-	MMRLambda     float64 `json:"mmr_lambda"`     // MMR diversification factor (default: 0.7)
+	BM25Weight    float64 `json:"bm25_weight"`     // Weight for BM25 score (default: 0.3)
+	VectorWeight  float64 `json:"vector_weight"`   // Weight for vector score (default: 0.7)
+	MMRLambda     float64 `json:"mmr_lambda"`      // MMR diversification factor (default: 0.7)
 	MaxSnippetLen int     `json:"max_snippet_len"` // Maximum snippet length (default: 200)
 }
 
 // NewRetriever creates a new hybrid search retriever
 func NewRetriever(esClient *Client, embeddingClient *llm.EmbeddingClient) *Retriever {
 	return &Retriever{
-		client:        esClient,
+		client:          esClient,
 		embeddingClient: embeddingClient,
-		logger:        logrus.New(),
-		bm25Weight:    0.3,
-		vectorWeight:  0.7,
-		mmrLambda:     0.7,
+		logger:          logrus.New(),
+		bm25Weight:      0.3,
+		vectorWeight:    0.7,
+		mmrLambda:       0.7,
 	}
 }
 
@@ -64,7 +63,7 @@ func (r *Retriever) SetConfig(config HybridSearchConfig) {
 }
 
 // HybridSearch performs hybrid search combining BM25 and vector similarity
-func (r *Retriever) HybridSearch(ctx context.Context, index, query string, k int) ([]SearchResult, error) {
+func (r *Retriever) HybridSearch(ctx context.Context, index, query string, k int) ([]SearchHit, error) {
 	if k <= 0 {
 		k = 10 // Default to 10 results
 	}
@@ -117,7 +116,7 @@ func (r *Retriever) embedQuery(ctx context.Context, query string) ([]float32, er
 }
 
 // executeHybridQuery executes the Elasticsearch query with bool_should
-func (r *Retriever) executeHybridQuery(ctx context.Context, index, query string, embedding []float32, size int) ([]SearchResult, error) {
+func (r *Retriever) executeHybridQuery(ctx context.Context, index, query string, embedding []float32, size int) ([]SearchHit, error) {
 	// Execute the search using the existing client
 	results, err := r.client.HybridSearch(ctx, index, query, embedding, size)
 	if err != nil {
@@ -125,14 +124,14 @@ func (r *Retriever) executeHybridQuery(ctx context.Context, index, query string,
 	}
 
 	// Convert to our internal format
-	var searchResults []SearchResult
+	var searchResults []SearchHit
 	for _, hit := range results.Hits {
 		// Extract document from source
 		doc := r.extractDocFromSource(hit.Source)
-		
+
 		// For now, we'll use the ES score as both BM25 and vector score
 		// In a real implementation, you'd separate these scores
-		searchResults = append(searchResults, SearchResult{
+		searchResults = append(searchResults, SearchHit{
 			Doc:         doc,
 			Score:       hit.Score,
 			BM25Score:   hit.Score * 0.5, // Placeholder - would need separate queries
@@ -144,25 +143,25 @@ func (r *Retriever) executeHybridQuery(ctx context.Context, index, query string,
 }
 
 // combineScores combines BM25 and vector scores with weighted sum
-func (r *Retriever) combineScores(results []SearchResult, query string) []SearchResult {
+func (r *Retriever) combineScores(results []SearchHit, query string) []SearchHit {
 	// Apply weighted combination of BM25 and vector scores
 	for i := range results {
 		// Combine scores using weighted sum
 		results[i].Score = r.bm25Weight*results[i].BM25Score + r.vectorWeight*results[i].VectorScore
 	}
-	
+
 	return results
 }
 
 // applyMMR applies Maximal Marginal Relevance diversification
-func (r *Retriever) applyMMR(results []SearchResult, k int) []SearchResult {
+func (r *Retriever) applyMMR(results []SearchHit, k int) []SearchHit {
 	if len(results) <= k {
 		return results
 	}
 
 	// MMR algorithm
-	selected := make([]SearchResult, 0, k)
-	remaining := make([]SearchResult, len(results))
+	selected := make([]SearchHit, 0, k)
+	remaining := make([]SearchHit, len(results))
 	copy(remaining, results)
 
 	// Select first result (highest score)
@@ -198,7 +197,7 @@ func (r *Retriever) applyMMR(results []SearchResult, k int) []SearchResult {
 }
 
 // calculateMaxSimilarity calculates maximum similarity between candidate and selected results
-func (r *Retriever) calculateMaxSimilarity(candidate SearchResult, selected []SearchResult) float64 {
+func (r *Retriever) calculateMaxSimilarity(candidate SearchHit, selected []SearchHit) float64 {
 	if len(selected) == 0 {
 		return 0.0
 	}
@@ -270,7 +269,7 @@ func (r *Retriever) jaccardSimilarity(s1, s2 string) float64 {
 }
 
 // normalizeScoresAndExtractSnippets normalizes scores and extracts snippets
-func (r *Retriever) normalizeScoresAndExtractSnippets(results []SearchResult, query string) []SearchResult {
+func (r *Retriever) normalizeScoresAndExtractSnippets(results []SearchHit, query string) []SearchHit {
 	if len(results) == 0 {
 		return results
 	}
@@ -296,7 +295,7 @@ func (r *Retriever) normalizeScoresAndExtractSnippets(results []SearchResult, qu
 	for i := range results {
 		// Normalize score
 		results[i].Score = (results[i].Score - minScore) / scoreRange
-		
+
 		// Extract snippet
 		results[i].Snippet = r.extractSnippet(results[i].Doc.Text, query, 200)
 	}
@@ -351,7 +350,7 @@ func (r *Retriever) extractSnippet(text, query string, maxLen int) string {
 	}
 
 	snippet := text[start:end]
-	
+
 	// Add ellipsis if needed
 	if start > 0 {
 		snippet = "..." + snippet

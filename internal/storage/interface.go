@@ -37,6 +37,21 @@ type Client interface {
 	GetSessionStats(ctx context.Context) (map[string]interface{}, error)
 }
 
+// Storage defines the interface for key-value storage operations
+type Storage interface {
+	// Get retrieves a value by key
+	Get(ctx context.Context, key string) ([]byte, error)
+
+	// Set stores a value by key
+	Set(ctx context.Context, key string, value []byte) error
+
+	// Delete removes a value by key
+	Delete(ctx context.Context, key string) error
+
+	// Close closes the storage connection
+	Close() error
+}
+
 // MockClientInterface extends the Client interface with mock-specific methods
 type MockClientInterface interface {
 	Client
@@ -50,7 +65,3 @@ type MockClientInterface interface {
 	// GetAllSessions returns all sessions (for testing purposes)
 	GetAllSessions() map[string]*Session
 }
-
-
-
-

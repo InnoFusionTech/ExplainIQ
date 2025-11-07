@@ -60,14 +60,14 @@ const LessonCard: React.FC<LessonCardProps> = ({ lesson, images = [], sessionId 
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* PDF Download Button */}
       {sessionId && (
         <div className="flex justify-end mb-6">
           <button
             onClick={handleDownloadPDF}
             disabled={isGeneratingPDF}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+            className="bg-gradient-to-r from-red-600 to-pink-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-red-700 hover:to-pink-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center space-x-2"
           >
             {isGeneratingPDF ? (
               <>
@@ -107,35 +107,52 @@ const LessonCard: React.FC<LessonCardProps> = ({ lesson, images = [], sessionId 
       )}
 
       {sections.map((section) => (
-        <div key={section.key} className={`border-l-4 pl-4 ${section.color}`}>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{section.title}</h3>
+        <div 
+          key={section.key} 
+          className={`border-l-4 pl-6 py-4 bg-white rounded-r-lg shadow-md hover:shadow-lg transition-all duration-200 ${section.color}`}
+        >
+          <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center space-x-2">
+            <span className="text-xl">📋</span>
+            <span>{section.title}</span>
+          </h3>
           {section.isCode ? (
-            <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
-              <code>{section.content}</code>
+            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto border border-gray-700 shadow-inner">
+              <code className="font-mono">{section.content}</code>
             </pre>
           ) : (
-            <p className="text-gray-700">{section.content}</p>
+            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{section.content}</p>
           )}
         </div>
       ))}
 
       {/* Visualizations */}
       {images && images.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Visualizations</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-6 border border-purple-200">
+          <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center space-x-2">
+            <span className="text-2xl">🎨</span>
+            <span>Visualizations</span>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {images.map((image, index) => (
-              <div key={index} className="border rounded-lg p-4">
-                <img
-                  src={image.url}
-                  alt={image.alt_text}
-                  className="w-full h-48 object-cover rounded mb-2"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
-                />
-                <p className="text-sm text-gray-600">{image.caption}</p>
+              <div 
+                key={index} 
+                className="bg-white rounded-lg shadow-md overflow-hidden transform hover:scale-[1.02] transition-transform duration-200"
+              >
+                <div className="relative overflow-hidden">
+                  <img
+                    src={image.url}
+                    alt={image.alt_text}
+                    className="w-full h-64 object-cover transition-transform duration-300 hover:scale-110"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+                </div>
+                <div className="p-4">
+                  <p className="text-sm text-gray-700 font-medium">{image.caption}</p>
+                </div>
               </div>
             ))}
           </div>

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/creduntvitam/explainiq/internal/adk"
-	"github.com/creduntvitam/explainiq/internal/llm"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"

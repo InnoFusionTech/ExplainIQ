@@ -1,4 +1,3 @@
-module github.com/explainiq/agent
+module github.com/InnoFusionTech/ExplainIQ
 
 go 1.22
-

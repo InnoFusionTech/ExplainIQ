@@ -154,8 +154,8 @@ func (f *FirestoreClient) SaveStep(ctx context.Context, sessionID, step string, 
 	}
 
 	f.logger.WithFields(logrus.Fields{
-		"session_id": sessionID,
-		"step":       step,
+		"session_id":  sessionID,
+		"step":        step,
 		"duration_ms": durationMs,
 	}).Info("Step saved to Firestore")
 
@@ -233,8 +233,8 @@ func (f *FirestoreClient) GetSession(ctx context.Context, sessionID string) (*Se
 	}
 
 	f.logger.WithFields(logrus.Fields{
-		"session_id": sessionID,
-		"status":     session.Status,
+		"session_id":  sessionID,
+		"status":      session.Status,
 		"steps_count": len(session.Steps),
 	}).Debug("Session retrieved from Firestore")
 
@@ -365,6 +365,51 @@ func (f *FirestoreClient) GetSessionStats(ctx context.Context) (map[string]inter
 	return stats, nil
 }
 
+// Get retrieves a value by key from Firestore
+func (f *FirestoreClient) Get(ctx context.Context, key string) ([]byte, error) {
+	docRef := f.client.Collection("kv_storage").Doc(key)
+	doc, err := docRef.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("key %s not found", key)
+		}
+		return nil, fmt.Errorf("failed to get key %s: %w", key, err)
+	}
 
+	data, err := doc.DataAt("value")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get value for key %s: %w", key, err)
+	}
 
+	valueBytes, ok := data.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("value for key %s is not []byte", key)
+	}
 
+	return valueBytes, nil
+}
+
+// Set stores a value by key in Firestore
+func (f *FirestoreClient) Set(ctx context.Context, key string, value []byte) error {
+	docRef := f.client.Collection("kv_storage").Doc(key)
+	_, err := docRef.Set(ctx, map[string]interface{}{
+		"value":      value,
+		"updated_at": time.Now(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set key %s: %w", key, err)
+	}
+
+	return nil
+}
+
+// Delete removes a value by key from Firestore
+func (f *FirestoreClient) Delete(ctx context.Context, key string) error {
+	docRef := f.client.Collection("kv_storage").Doc(key)
+	_, err := docRef.Delete(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete key %s: %w", key, err)
+	}
+
+	return nil
+}

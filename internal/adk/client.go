@@ -417,6 +417,11 @@ func (c *Client) addTracingHeaders(req *http.Request, metadata *TaskMetadata) {
 	req.Header.Set("X-Client-Name", "ExplainIQ-ADK")
 }
 
+// GetBaseURL returns the client's base URL
+func (c *Client) GetBaseURL() string {
+	return c.baseURL
+}
+
 // GetConfig returns the current client configuration
 func (c *Client) GetConfig() TaskConfig {
 	return c.config

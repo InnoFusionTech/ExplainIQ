@@ -1,4 +1,4 @@
-module github.com/explainiq/agent/internal/adk
+module github.com/InnoFusionTech/ExplainIQ/internal/adk
 
 go 1.22
 
@@ -8,9 +8,8 @@ require (
 )
 
 require (
-	github.com/stretchr/testify v1.8.3 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
 )
 
-replace github.com/explainiq/agent => ../../
-
+replace github.com/InnoFusionTech/ExplainIQ => ../../

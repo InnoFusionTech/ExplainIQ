@@ -1,7 +1,10 @@
 // Types for the ExplainIQ Frontend
 
+export type ExplanationType = 'standard' | 'visualization' | 'simple' | 'analogy';
+
 export interface SessionRequest {
   topic: string;
+  explanation_type?: ExplanationType;
 }
 
 export interface SessionResponse {
@@ -57,4 +60,17 @@ export interface PDFResponse {
   filename: string;
   size: number;
   created_at: string;
+}
+
+export interface BrainPrint {
+  userID: string;
+  totalSessions: number;
+  byType: {
+    Standard?: number;
+    Visualization?: number;
+    Simple?: number;
+    Analogy?: number;
+  };
+  recommendedType: string;
+  lastUpdated?: string;
 }

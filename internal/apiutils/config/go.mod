@@ -1,10 +1,10 @@
-module github.com/explainiq/agent/internal/apiutils/config
+module github.com/InnoFusionTech/ExplainIQ/internal/apiutils/config
 
 go 1.22
 
 require (
-	github.com/explainiq/agent v0.0.0
+	github.com/InnoFusionTech/ExplainIQ v0.0.0
 )
 
-replace github.com/explainiq/agent => ../../../
+replace github.com/InnoFusionTech/ExplainIQ => ../../../
 

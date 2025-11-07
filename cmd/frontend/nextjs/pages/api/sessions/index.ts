@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { SessionRequest, SessionResponse } from '../../../types';
-
-const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8080';
+import { getOrchestratorURL } from '../../../utils/orchestrator';
 
 export default async function handler(
   req: NextApiRequest,
@@ -12,19 +11,26 @@ export default async function handler(
   }
 
   try {
-    const { topic }: SessionRequest = req.body;
+    const { topic, explanation_type }: SessionRequest = req.body;
 
     if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
       return res.status(400).json({ error: 'Topic is required' });
     }
 
     // Create session with orchestrator
+    const ORCHESTRATOR_URL = getOrchestratorURL();
+    console.log(`[Session Creation] Connecting to: ${ORCHESTRATOR_URL}/api/sessions`);
+    console.log(`[Session Creation] Environment check - ORCHESTRATOR_URL from env: ${process.env.ORCHESTRATOR_URL || 'NOT SET'}`);
+    
     const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/api/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ topic: topic.trim() }),
+      body: JSON.stringify({ 
+        topic: topic.trim(),
+        explanation_type: explanation_type || 'standard'
+      }),
     });
 
     if (!orchestratorResponse.ok) {

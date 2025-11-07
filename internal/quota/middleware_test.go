@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/creduntvitam/explainiq/internal/cost_tracker"
-	"github.com/creduntvitam/explainiq/internal/rate_limiter"
+	"github.com/InnoFusionTech/ExplainIQ/internal/cost_tracker"
+	"github.com/InnoFusionTech/ExplainIQ/internal/rate_limiter"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -36,6 +36,11 @@ func (m *MockStorage) Delete(ctx context.Context, key string) error {
 func (m *MockStorage) List(ctx context.Context, prefix string) ([]string, error) {
 	args := m.Called(ctx, prefix)
 	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockStorage) Close() error {
+	args := m.Called()
+	return args.Error(0)
 }
 
 func TestQuotaMiddleware_RateLimitExceeded(t *testing.T) {

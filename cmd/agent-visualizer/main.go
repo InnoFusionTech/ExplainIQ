@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"strconv"
 
-	"github.com/explainiq/agent/internal/adk"
-	"github.com/explainiq/agent/internal/auth"
-	"github.com/explainiq/agent/internal/llm"
-	"github.com/gin-gonic/gin"
+	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	"github.com/InnoFusionTech/ExplainIQ/internal/agent"
+	"github.com/InnoFusionTech/ExplainIQ/internal/constants"
+	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/sirupsen/logrus"
 )
 
@@ -98,117 +95,25 @@ func (s *VisualizerService) ProcessTask(ctx context.Context, req adk.TaskRequest
 }
 
 func main() {
-	log := logrus.New()
-	log.SetLevel(logrus.InfoLevel)
-
-	// Set Gin mode
-	if os.Getenv("GIN_MODE") == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
 	// Create visualizer service
 	service := NewVisualizerService()
 
-	// Create auth client
-	serviceURL := os.Getenv("SERVICE_URL")
-	if serviceURL == "" {
-		serviceURL = "http://localhost:8084"
-	}
-	authClient := auth.NewClient(serviceURL)
-
-	router := gin.New()
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-
-	// Health check endpoint (no auth required)
-	router.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "healthy",
-			"service":   "agent-visualizer",
-			"timestamp": time.Now().UTC(),
-		})
-	})
-
-	// Task processing endpoint (auth required)
-	router.POST("/task", auth.ServiceAuthMiddleware(authClient), func(c *gin.Context) {
-		var req adk.TaskRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request format",
-				"details": err.Error(),
-			})
-			return
+	// Check if authentication is required (default to true for production, false for local dev)
+	requireAuth := true
+	if requireAuthStr := os.Getenv("REQUIRE_AUTH"); requireAuthStr != "" {
+		if val, err := strconv.ParseBool(requireAuthStr); err == nil {
+			requireAuth = val
 		}
-
-		// Validate request
-		if err := req.Validate(); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Process the task
-		response, err := service.ProcessTask(c.Request.Context(), req)
-		if err != nil {
-			log.WithFields(logrus.Fields{
-				"session_id": req.SessionID,
-				"error":      err,
-			}).Error("Task processing failed")
-
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Task processing failed",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, response)
-	})
-
-	// Legacy API endpoint for backward compatibility
-	api := router.Group("/api/v1")
-	{
-		api.POST("/visualize", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"message": "Use POST /task endpoint instead",
-				"service": "agent-visualizer",
-			})
-		})
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8084"
+	// Start agent service using shared infrastructure
+	if err := agent.StartAgentService(agent.ServiceConfig{
+		ServiceName: constants.ServiceVisualizer,
+		DefaultPort: constants.DefaultPortVisualizer,
+		DefaultURL:  constants.DefaultURLVisualizer,
+		Processor:   service,
+		RequireAuth: requireAuth,
+	}); err != nil {
+		service.logger.Fatalf("Failed to start service: %v", err)
 	}
-
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
-	}
-
-	// Start server in a goroutine
-	go func() {
-		log.Infof("Agent Visualizer service starting on port %s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
-		}
-	}()
-
-	// Wait for interrupt signal to gracefully shutdown the server
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info("Shutting down agent-visualizer service...")
-
-	// Give outstanding requests 30 seconds to complete
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
-
-	log.Info("Agent Visualizer service exited")
 }
