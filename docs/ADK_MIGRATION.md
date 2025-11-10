@@ -141,3 +141,4 @@ remoteAgent, err := remoteagent.New(remoteagent.A2AConfig{
 3. **Learning Curve**: Team needs to learn A2A protocol and Google ADK APIs
 4. **Testing**: Need to update all tests for new protocol
 
+
