@@ -4,12 +4,11 @@ metadata:
   name: explainiq-visualizer
   annotations:
     run.googleapis.com/ingress: all
-    run.googleapis.com/execution-environment: gen2
 spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/maxScale: "5"
         autoscaling.knative.dev/minScale: "1"
         run.googleapis.com/cpu-throttling: "false"
         run.googleapis.com/execution-environment: gen2
@@ -17,12 +16,10 @@ spec:
       containerConcurrency: 50
       timeoutSeconds: 600
       containers:
-      - image: gcr.io/PROJECT_ID/explainiq-visualizer:latest
+      - image: REGION-docker.pkg.dev/PROJECT_ID/REPO/explainiq-visualizer:latest
         ports:
         - containerPort: 8084
         env:
-        - name: PORT
-          value: "8084"
         - name: GIN_MODE
           value: "release"
         - name: LOG_LEVEL
@@ -31,13 +28,13 @@ spec:
           valueFrom:
             secretKeyRef:
               name: google-ai-api-key
-              key: latest
+              key: "1"
         resources:
           limits:
-            cpu: "4"
+            cpu: "2"
             memory: "4Gi"
           requests:
-            cpu: "2"
+            cpu: "1"
             memory: "2Gi"
         livenessProbe:
           httpGet:
@@ -45,10 +42,4 @@ spec:
             port: 8084
           initialDelaySeconds: 30
           periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 8084
-          initialDelaySeconds: 5
-          periodSeconds: 5
 

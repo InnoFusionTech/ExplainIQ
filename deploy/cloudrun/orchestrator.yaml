@@ -4,7 +4,6 @@ metadata:
   name: explainiq-orchestrator
   annotations:
     run.googleapis.com/ingress: all
-    run.googleapis.com/execution-environment: gen2
 spec:
   template:
     metadata:
@@ -17,12 +16,10 @@ spec:
       containerConcurrency: 100
       timeoutSeconds: 300
       containers:
-      - image: gcr.io/PROJECT_ID/explainiq-orchestrator:latest
+      - image: REGION-docker.pkg.dev/PROJECT_ID/REPO/explainiq-orchestrator:latest
         ports:
         - containerPort: 8080
         env:
-        - name: PORT
-          value: "8080"
         - name: GIN_MODE
           value: "release"
         - name: LOG_LEVEL
@@ -40,10 +37,4 @@ spec:
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
 

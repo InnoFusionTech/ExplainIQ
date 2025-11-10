@@ -1,5 +1,5 @@
 # Multi-stage build for Go summarizer service
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Install git (needed for go mod download with local replace directives)
 RUN apk add --no-cache git
@@ -19,11 +19,13 @@ COPY internal/ ./internal/
 
 # Download dependencies with cache mount
 # Set GOPRIVATE, GONOPROXY, and GONOSUMDB to prevent Go from trying to fetch local modules from remote
+# Set GOWORK=off to disable workspace mode in Docker build
 RUN --mount=type=cache,target=/go/pkg/mod \
     cd cmd/agent-summarizer && \
     GOPRIVATE=github.com/InnoFusionTech/ExplainIQ \
     GONOPROXY=github.com/InnoFusionTech/ExplainIQ \
     GONOSUMDB=github.com/InnoFusionTech/ExplainIQ \
+    GOWORK=off \
     go mod download
 
 # Copy only necessary source files (internal already copied above)
@@ -37,13 +39,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOPRIVATE=github.com/InnoFusionTech/ExplainIQ \
     GONOPROXY=github.com/InnoFusionTech/ExplainIQ \
     GONOSUMDB=github.com/InnoFusionTech/ExplainIQ \
-    CGO_ENABLED=0 GOOS=linux go build -mod=readonly -a -installsuffix cgo -ldflags '-w -s' -o agent-summarizer .
+    GOWORK=off \
+    CGO_ENABLED=0 GOOS=linux go build -mod=mod -a -installsuffix cgo -ldflags '-w -s' -o agent-summarizer .
 
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates for HTTPS requests and wget for health checks
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 

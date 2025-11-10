@@ -38,11 +38,6 @@ func (m *MockStorage) List(ctx context.Context, prefix string) ([]string, error)
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *MockStorage) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
 func TestQuotaMiddleware_RateLimitExceeded(t *testing.T) {
 	// Create rate limiter with very low limits
 	rateLimiter := rate_limiter.NewLimiter(0.1, 1) // 0.1 requests per second, burst of 1

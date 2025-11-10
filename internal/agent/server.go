@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -15,10 +14,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TaskProcessor defines the interface for processing tasks
-type TaskProcessor interface {
-	ProcessTask(ctx context.Context, req adk.TaskRequest) (adk.TaskResponse, error)
-}
+// TaskProcessor is an alias for adk.TaskProcessor to maintain backward compatibility
+// The interface is now defined in the adk package
+type TaskProcessor = adk.TaskProcessor
 
 // ServiceConfig holds configuration for agent services
 type ServiceConfig struct {

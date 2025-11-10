@@ -1,9 +1,16 @@
 package adk
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
+
+// TaskProcessor defines the interface for processing tasks
+// This interface is used by agents to process task requests
+type TaskProcessor interface {
+	ProcessTask(ctx context.Context, req TaskRequest) (TaskResponse, error)
+}
 
 // TaskRequest represents a request to execute a task
 type TaskRequest struct {

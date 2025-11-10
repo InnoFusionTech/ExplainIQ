@@ -28,30 +28,6 @@ func (m *MockGeminiClient) Summarize(ctx context.Context, topic, context string)
 	return args.Get(0).(*llm.SummarizeResponse), args.Error(1)
 }
 
-func (m *MockGeminiClient) ExplainWithOG(ctx context.Context, topic, outline, misconceptions, context string) (*llm.OGLesson, error) {
-	args := m.Called(ctx, topic, outline, misconceptions, context)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*llm.OGLesson), args.Error(1)
-}
-
-func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*llm.CritiqueResponse, error) {
-	args := m.Called(ctx, lessonJSON)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*llm.CritiqueResponse), args.Error(1)
-}
-
-func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
-	args := m.Called(ctx, lessonJSON, sessionID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*llm.VisualizeResponse), args.Error(1)
-}
-
 func (m *MockGeminiClient) Health(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
@@ -72,6 +48,30 @@ func (m *MockGeminiClient) SetBaseURL(baseURL string) {
 func (m *MockGeminiClient) GetModelInfo() map[string]interface{} {
 	args := m.Called()
 	return args.Get(0).(map[string]interface{})
+}
+
+func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*llm.CritiqueResponse, error) {
+	args := m.Called(ctx, lessonJSON)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.CritiqueResponse), args.Error(1)
+}
+
+func (m *MockGeminiClient) ExplainWithOG(ctx context.Context, topic, outline, misconceptions, context string) (*llm.OGLesson, error) {
+	args := m.Called(ctx, topic, outline, misconceptions, context)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.OGLesson), args.Error(1)
+}
+
+func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
+	args := m.Called(ctx, lessonJSON, sessionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*llm.VisualizeResponse), args.Error(1)
 }
 
 // TestNewSummarizerService tests service creation

@@ -78,7 +78,6 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "  - Agent Explainer:  http://localhost:8082" -ForegroundColor White
     Write-Host "  - Agent Critic:     http://localhost:8083" -ForegroundColor White
     Write-Host "  - Agent Visualizer: http://localhost:8084" -ForegroundColor White
-    Write-Host "  - Frontend (Go):    http://localhost:8085" -ForegroundColor White
     Write-Host "  - Frontend (NextJS): http://localhost:3000" -ForegroundColor White
     Write-Host ""
     Write-Host "View logs: docker-compose -f docker/docker-compose.yml logs -f" -ForegroundColor Yellow
@@ -92,6 +91,11 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Failed to start services. Check the error messages above." -ForegroundColor Red
     exit 1
 }
+
+
+
+
+
 
 
 

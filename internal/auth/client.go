@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -75,14 +76,18 @@ func (c *Client) GetIDToken(ctx context.Context, targetAudience string) (string,
 		return "", fmt.Errorf("metadata server returned status %d", resp.StatusCode)
 	}
 
-	var tokenResponse struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
+	// The metadata server returns the ID token directly as a string, not JSON
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token response: %w", err)
 	}
 
-	return tokenResponse.AccessToken, nil
+	token := string(body)
+	if token == "" {
+		return "", fmt.Errorf("empty token received from metadata server")
+	}
+
+	return token, nil
 }
 
 // ValidateGoogleJWT validates a Google-signed JWT token

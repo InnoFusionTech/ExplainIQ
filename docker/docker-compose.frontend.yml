@@ -1,0 +1,31 @@
+# Frontend only - for frontend development
+# Use: docker-compose -f docker-compose.frontend.yml up --build
+# Note: Requires orchestrator to be running separately or use docker-compose.base.yml
+services:
+  frontend-nextjs:
+    build:
+      context: ../cmd/frontend/nextjs
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - ORCHESTRATOR_URL=${ORCHESTRATOR_URL:-http://localhost:8080}
+      - NEXT_TELEMETRY_DISABLED=1
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - explainiq-network
+
+networks:
+  explainiq-network:
+    driver: bridge
+

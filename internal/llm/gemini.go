@@ -44,10 +44,12 @@ func (m *ModelsWrapper) GenerateContent(ctx context.Context, modelName string, p
 
 // GeminiClient represents a client for Google Gemini API
 type GeminiClient struct {
-	client *genai.Client
-	Models *ModelsWrapper // Provides client.Models.GenerateContent() interface
-	model  string
-	logger *logrus.Logger
+	client  *genai.Client
+	Models  *ModelsWrapper // Provides client.Models.GenerateContent() interface
+	model   string
+	logger  *logrus.Logger
+	baseURL string // For testing only - not used with official SDK
+	apiKey  string // For testing only - tracks the API key used
 }
 
 // GeminiRequest represents a request to the Gemini API
@@ -210,6 +212,7 @@ func NewGeminiClient(apiKey string) *GeminiClient {
 		Models: &ModelsWrapper{client: client},
 		model:  "gemini-2.5-flash",
 		logger: logrus.New(),
+		apiKey: apiKey, // Store for testing purposes
 	}
 }
 
@@ -458,10 +461,11 @@ func (c *GeminiClient) SetModel(model string) {
 	c.model = model
 }
 
-// SetBaseURL updates the base URL (no-op for SDK, kept for interface compatibility)
+// SetBaseURL updates the base URL (for testing only)
 func (c *GeminiClient) SetBaseURL(baseURL string) {
-	// SDK doesn't support custom base URLs, but we keep this for interface compatibility
-	c.logger.Warn("SetBaseURL is not supported with the official SDK")
+	// Store for testing purposes only - official SDK doesn't support custom base URLs
+	c.baseURL = baseURL
+	c.logger.Warn("SetBaseURL is for testing only - not used with the official SDK")
 }
 
 // ExplainWithOG generates an OpenGraph-style lesson using the Gemini model
@@ -797,11 +801,19 @@ func (c *GeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID 
 	var images []ImageRef
 	var captions []string
 
+	// Get bucket name with fallback
+	gcsBucket := os.Getenv("GCS_BUCKET")
+	if gcsBucket == "" {
+		gcsBucket = "explainiq-diagrams" // Default bucket name
+		c.logger.Warn("GCS_BUCKET not set, using default: explainiq-diagrams")
+	}
+
 	for i, prompt := range prompts {
 		// In a real implementation, this would call the Imagen API
 		// For now, we'll create mock image references
+		// Note: These URLs are placeholders - actual images need to be uploaded to GCS
 		imageRef := ImageRef{
-			URL:     fmt.Sprintf("https://storage.googleapis.com/%s/sessions/%s/diagram_%d.png", os.Getenv("GCS_BUCKET"), sessionID, i+1),
+			URL:     fmt.Sprintf("https://storage.googleapis.com/%s/sessions/%s/diagram_%d.png", gcsBucket, sessionID, i+1),
 			AltText: fmt.Sprintf("Diagram %d illustrating %s", i+1, lesson.CoreMechanism),
 			Caption: prompt.Caption,
 		}

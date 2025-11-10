@@ -1,212 +1,179 @@
-# ExplainIQ Docker Setup
+# Docker Compose Setup
 
-This directory contains Docker configurations for running the ExplainIQ platform in containers.
-
-## Prerequisites
-
-1. **Docker Desktop** - Make sure Docker Desktop is installed and running
-2. **Environment Variables** - Copy `env.example` to `.env` and configure your API keys
+This directory contains optimized Docker Compose configurations for the ExplainIQ application.
 
 ## Quick Start
 
-### 1. Setup Environment
-
+### Using Make (Recommended - Cross-platform)
 ```bash
-# Copy environment template
-cp env.example .env
-
-# Edit .env file with your API keys
-# GEMINI_API_KEY=your-actual-api-key-here
+make frontend    # Start frontend services
+make backend     # Start backend services
+make agents      # Start agent services only
+make full        # Start everything
+make help        # Show all available commands
 ```
 
-### 2. Build and Run
-
-```bash
-# Build all services
-docker-compose build
-
-# Start all services
-docker-compose up -d
-
-# Or use the PowerShell script
-.\docker-run.ps1 up
+### Windows (PowerShell)
+```powershell
+cd docker
+.\docker-compose.ps1 -Frontend up --build    # Frontend only
+.\docker-compose.ps1 -Backend up --build     # Backend only
+.\docker-compose.ps1 up --build              # Everything
 ```
 
-### 3. Access Services
-
-- **Frontend (Go)**: http://localhost:8085
-- **Frontend (Next.js)**: http://localhost:3000
-- **API Orchestrator**: http://localhost:8080
-- **Agent Services**: 
-  - Summarizer: http://localhost:8081
-  - Explainer: http://localhost:8082
-  - Critic: http://localhost:8083
-  - Visualizer: http://localhost:8084
-
-## Available Commands
-
-### Using Docker Compose
-
+### Linux/Mac (Bash)
 ```bash
-# Start all services
-docker-compose up -d
+cd docker
+docker-compose --profile frontend up --build    # Frontend only
+docker-compose --profile backend up --build     # Backend only
+docker-compose up --build                        # Everything
+```
 
-# Start specific service
-docker-compose up -d agent-critic
+## Profiles
+
+The main `docker-compose.yml` uses profiles to allow selective service startup:
+
+- **`frontend`** - Frontend + Orchestrator (frontend depends on orchestrator)
+- **`backend`** - Orchestrator + All Agents
+- **`agents`** - All Agent services only
+- **`full`** - Everything (default when no profile specified)
+
+## Service Ports
+
+- **Orchestrator**: 8080
+- **Agent Summarizer**: 8081
+- **Agent Explainer**: 8082
+- **Agent Critic**: 8083
+- **Agent Visualizer**: 8084
+- **Frontend (Next.js)**: 3000
+
+## Environment Setup
+
+1. Copy `env.example` to `.env`:
+   ```bash
+   cp env.example .env
+   ```
+
+2. Edit `.env` and fill in required variables:
+   - `GEMINI_API_KEY` (required)
+   - Other environment variables as needed
+
+## Common Commands
+
+### Using Make (Easiest)
+```bash
+# Start services
+make frontend         # Frontend only
+make backend          # Backend only
+make agents           # Agents only
+make full             # Everything
+
+# Build services
+make build-frontend   # Build frontend only
+make build-backend    # Build backend only
+make build-full       # Build everything
+
+# Stop services
+make down             # Stop all
+make down-frontend    # Stop frontend
+make down-backend     # Stop backend
 
 # View logs
-docker-compose logs -f
+make logs             # All services
+make logs-frontend    # Frontend only
+make logs-backend     # Backend only
 
-# View logs for specific service
-docker-compose logs -f agent-critic
+# Other useful commands
+make status           # Check service status
+make health           # Health check
+make clean            # Clean up everything
+make dev              # Development mode
+```
 
+### Direct Docker Compose Commands
+
+#### Start Services
+```bash
+# Frontend only
+docker-compose --profile frontend up
+
+# Backend only
+docker-compose --profile backend up
+
+# Everything
+docker-compose up
+```
+
+#### Build Services
+```bash
+# Build frontend only
+docker-compose --profile frontend build
+
+# Build backend only
+docker-compose --profile backend build
+
+# Build everything
+docker-compose build
+```
+
+#### Stop Services
+```bash
 # Stop all services
 docker-compose down
 
-# Rebuild and start
-docker-compose up --build -d
+# Stop specific profile
+docker-compose --profile frontend down
 ```
 
-### Using PowerShell Script
+#### View Logs
+```bash
+# All services
+docker-compose logs -f
 
-```powershell
-# Start all services
-.\docker-run.ps1 up
-
-# Start in development mode
-.\docker-run.ps1 dev
-
-# Stop all services
-.\docker-run.ps1 down
-
-# View logs
-.\docker-run.ps1 logs
-
-# Check status
-.\docker-run.ps1 status
-
-# Build services
-.\docker-run.ps1 build
-
-# Restart services
-.\docker-run.ps1 restart
+# Specific service
+docker-compose logs -f orchestrator
 ```
 
-## Service Architecture
+## Development Mode
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Frontend      │    │   Orchestrator  │
-│   (Next.js)     │    │   (Go)          │    │   (Port 8080)   │
-│   Port 3000     │    │   Port 8085     │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Summarizer    │    │   Explainer     │    │   Critic        │
-│   Port 8081     │    │   Port 8082     │    │   Port 8083     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌─────────────────┐
-                    │   Visualizer    │
-                    │   Port 8084     │
-                    └─────────────────┘
+For development with hot-reload, use:
+```bash
+docker-compose -f docker-compose.dev.yml up
 ```
 
-## Environment Variables
+## Build Optimization
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GEMINI_API_KEY` | Google Gemini AI API key | Yes |
-| `LOG_LEVEL` | Logging level (debug, info, warn, error) | No |
-| `GIN_MODE` | Gin framework mode (debug, release) | No |
+- All services use `BUILDKIT_INLINE_CACHE: 1` for better caching
+- Build only what you need using profiles
+- Use `--no-cache` when you need a fresh build:
+  ```bash
+  docker-compose build --no-cache
+  ```
 
 ## Troubleshooting
 
-### Docker Desktop Not Running
-```
-error during connect: Head "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/_ping"
-```
-**Solution**: Start Docker Desktop and wait for it to fully initialize.
-
-### Build Failures
-```bash
-# Clean build cache
-docker system prune -a
-
-# Rebuild without cache
-docker-compose build --no-cache
-```
-
 ### Port Conflicts
-If you get port conflicts, modify the port mappings in `docker-compose.yml`:
-```yaml
-ports:
-  - "8080:8080"  # Change first number to available port
-```
-
-### Service Health Checks
+If ports are already in use, you can override them:
 ```bash
-# Check service health
-docker-compose ps
-
-# View service logs
-docker-compose logs service-name
+docker-compose up -p 3001:3000 frontend-nextjs
 ```
 
-## Development
-
-### Hot Reload (Development Mode)
+### Build Cache Issues
+Clear Docker build cache:
 ```bash
-# Use development compose file
-docker-compose -f docker-compose.dev.yml up -d
+docker builder prune
 ```
 
-### Debugging
+### Network Issues
+Ensure services are on the same network:
 ```bash
-# Run service in interactive mode
-docker-compose run --rm agent-critic sh
-
-# View service logs in real-time
-docker-compose logs -f agent-critic
+docker network ls | grep explainiq-network
 ```
 
-## Production Deployment
+## Additional Files
 
-For production deployment, consider:
-
-1. **Environment Variables**: Use proper secrets management
-2. **Resource Limits**: Add memory and CPU limits
-3. **Health Checks**: Configure proper health check intervals
-4. **Logging**: Set up centralized logging
-5. **Monitoring**: Add monitoring and alerting
-6. **Security**: Use non-root users and security scanning
-
-## Cleanup
-
-```bash
-# Stop and remove containers
-docker-compose down
-
-# Remove volumes
-docker-compose down -v
-
-# Remove images
-docker-compose down --rmi all
-
-# Full cleanup
-docker system prune -a
-```
-
-
-
-
-
-
-
-
+- `docker-compose.base.yml` - Base services (orchestrator + frontend)
+- `docker-compose.agents.yml` - Agent services only
+- `docker-compose.full.yml` - Full stack (all services)
+- `docker-compose.dev.yml` - Development mode with hot-reload
+- `docker-compose.quick.md` - Quick reference guide

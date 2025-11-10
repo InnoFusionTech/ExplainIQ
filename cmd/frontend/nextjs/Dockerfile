@@ -20,9 +20,19 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Accept build arguments for environment variables
+ARG NEXT_PUBLIC_ORCHESTRATOR_URL
+ARG ORCHESTRATOR_URL
+ARG GCS_PROJECT_ID
+ARG GCS_BUCKET
+
 # Set environment variables for build
-ENV NEXT_TELEMETRY_DISABLED 1
-ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+ENV NEXT_PUBLIC_ORCHESTRATOR_URL=${NEXT_PUBLIC_ORCHESTRATOR_URL}
+ENV ORCHESTRATOR_URL=${ORCHESTRATOR_URL}
+ENV GCS_PROJECT_ID=${GCS_PROJECT_ID}
+ENV GCS_BUCKET=${GCS_BUCKET}
 
 # Build the application
 RUN npm run build
@@ -66,10 +76,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
-EXPOSE 3000
-
-ENV PORT 3000
+# Cloud Run sets PORT automatically, so we don't hardcode it
+# Next.js will use process.env.PORT if available, otherwise defaults to 3000
 ENV HOSTNAME "0.0.0.0"
+
+# Expose the port (Cloud Run will set PORT env var)
+EXPOSE 8080
 
 # Start the application
 CMD ["node", "server.js"]

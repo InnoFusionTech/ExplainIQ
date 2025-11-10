@@ -4,7 +4,6 @@ metadata:
   name: explainiq-frontend
   annotations:
     run.googleapis.com/ingress: all
-    run.googleapis.com/execution-environment: gen2
 spec:
   template:
     metadata:
@@ -17,16 +16,18 @@ spec:
       containerConcurrency: 100
       timeoutSeconds: 300
       containers:
-      - image: gcr.io/PROJECT_ID/explainiq-frontend:latest
+      - image: REGION-docker.pkg.dev/PROJECT_ID/REPO/explainiq-frontend:latest
         ports:
-        - containerPort: 8085
+        - containerPort: 8080
         env:
-        - name: PORT
-          value: "8085"
-        - name: GIN_MODE
-          value: "release"
-        - name: LOG_LEVEL
-          value: "info"
+        - name: NODE_ENV
+          value: "production"
+        - name: ORCHESTRATOR_URL
+          value: "ORCHESTRATOR_URL_PLACEHOLDER"
+        - name: NEXT_PUBLIC_ORCHESTRATOR_URL
+          value: "ORCHESTRATOR_URL_PLACEHOLDER"
+        - name: GCS_PROJECT_ID
+          value: "PROJECT_ID"
         resources:
           limits:
             cpu: "2"
@@ -34,16 +35,4 @@ spec:
           requests:
             cpu: "1"
             memory: "1Gi"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8085
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 8085
-          initialDelaySeconds: 5
-          periodSeconds: 5
 

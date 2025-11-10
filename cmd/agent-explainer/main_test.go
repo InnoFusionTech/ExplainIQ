@@ -32,14 +32,6 @@ func (m *MockGeminiClient) ExplainWithOG(ctx context.Context, topic, outline, mi
 	return nil, errors.New("mock error")
 }
 
-func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string) (*llm.CritiqueResponse, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *MockGeminiClient) Health(ctx context.Context) error {
 	return nil
 }
@@ -71,12 +63,13 @@ func TestExplainerService_ProcessTask_Success(t *testing.T) {
 		},
 	}
 
-	// Create service with mock client, using interface type if needed for compatibility
-	var geminiInterface llm.GeminiClientInterface = mockClient
+	// Create service with mock client
 	service := &ExplainerService{
-		geminiClient: geminiInterface,
+		geminiClient: mockClient,
 		logger:       logrus.New(),
 	}
+
+	// Create test request
 	req := adk.TaskRequest{
 		SessionID: "test-session",
 		Step:      "explainer",

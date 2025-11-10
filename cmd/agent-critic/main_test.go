@@ -36,10 +36,6 @@ func (m *MockGeminiClient) CritiqueLesson(ctx context.Context, lessonJSON string
 	return nil, errors.New("mock error")
 }
 
-func (m *MockGeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID string) (*llm.VisualizeResponse, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *MockGeminiClient) Health(ctx context.Context) error {
 	return nil
 }

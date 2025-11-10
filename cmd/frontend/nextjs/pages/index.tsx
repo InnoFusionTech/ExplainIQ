@@ -13,6 +13,7 @@ import LoadingSkeleton, { TimelineSkeleton } from '../components/LoadingSkeleton
 import RetryButton from '../components/RetryButton';
 import BrainPrintCard from '../components/BrainPrintCard';
 import { useRetry } from '../hooks/useRetry';
+import { getOrchestratorURL } from '../utils/getOrchestratorURL';
 import { validateTopic } from '../utils/validation';
 import { handleError, isRetryableError } from '../utils/errorHandler';
 
@@ -35,6 +36,7 @@ export default function Home() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSSEConnected, setIsSSEConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const brainPrintRefreshRef = useRef<(() => void) | null>(null);
 
   // Retry hook for session creation
   const { execute: retryCreateSession, isRetrying: isRetryingSession } = useRetry(
@@ -150,29 +152,41 @@ export default function Home() {
 
       eventSource.onmessage = (event) => {
         try {
+          console.log('SSE message received:', event.data);
           const sseEvent: SSEEvent = JSON.parse(event.data);
           handleSSEEvent(sseEvent);
         } catch (err) {
-          console.error('Failed to parse SSE event:', err);
-          setError('Failed to parse server response');
+          console.error('Failed to parse SSE event:', err, 'Raw data:', event.data);
+          // Don't set error for parse failures - might be a non-standard event
+          // Only set error if it's a critical failure
         }
       };
 
       eventSource.onerror = (event) => {
-        console.error('SSE connection error:', event);
+        console.error('SSE connection error:', event, 'ReadyState:', eventSource.readyState);
         setIsSSEConnected(false);
         
-        if (eventSource.readyState === EventSource.CLOSED && retryCount < maxRetries) {
-          // Retry connection
-          setTimeout(() => {
+        // Only show error if connection is actually closed and we've exhausted retries
+        if (eventSource.readyState === EventSource.CLOSED) {
+          if (retryCount < maxRetries) {
+            // Retry connection
             console.log(`Retrying SSE connection (${retryCount + 1}/${maxRetries})`);
-            connectToSSE(sessionId, retryCount + 1);
-          }, retryDelay * (retryCount + 1));
+            setTimeout(() => {
+              connectToSSE(sessionId, retryCount + 1);
+            }, retryDelay * (retryCount + 1));
+          } else {
+            // Only show error if we've exhausted retries and connection is closed
+            // Don't show error if we're just waiting for events
+            if (!isLoading) {
+              setError('Connection lost. Please try again.');
+            }
+            setIsLoading(false);
+            setIsInitialLoading(false);
+            eventSource.close();
+          }
         } else {
-          setError('Connection lost. Please try again.');
-          setIsLoading(false);
-          setIsInitialLoading(false);
-          eventSource.close();
+          // Connection is still open (CONNECTING or OPEN) - might be a temporary issue
+          console.log('SSE connection state:', eventSource.readyState, '- waiting for events');
         }
       };
     } catch (err) {
@@ -187,6 +201,11 @@ export default function Home() {
     const { type, data } = event;
 
     switch (type) {
+      case 'connected':
+        // Initial connection event - just acknowledge
+        console.log('SSE connected:', data.session_id);
+        break;
+      
       case 'step_start':
         updateStepStatus(data.step!, 'running', data.timestamp);
         break;
@@ -201,9 +220,51 @@ export default function Home() {
       
       case 'session_complete':
         setIsLoading(false);
+        console.log('Session complete - artifacts received:', data.artifacts);
         if (data.artifacts) {
-          setFinalResult(data.artifacts as FinalResult);
+          // Ensure proper structure for FinalResult
+          const artifacts = data.artifacts as any;
+          const finalResult: FinalResult = {
+            lesson: artifacts.lesson || null,
+            images: artifacts.images || [],
+            captions: artifacts.captions || (artifacts.images ? artifacts.images.map((img: any) => img.caption || img.alt_text || '').filter((c: string) => c) : []),
+          };
+          console.log('Final result structured:', finalResult);
+          setFinalResult(finalResult);
+        } else {
+          console.warn('No artifacts in session_complete event');
         }
+        
+        // Call session complete endpoint to update BrainPrint
+        if (sessionId) {
+          const orchestratorURL = getOrchestratorURL();
+          fetch(`${orchestratorURL}/api/session/complete`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              session_id: sessionId,
+              user_id: sessionId, // Use session ID as user ID for now
+              explanation_type: explanationType,
+            }),
+          }).then(() => {
+            // Refresh BrainPrint after session completion
+            const refreshFn = (window as any)[`brainprint_refresh_${sessionId}`];
+            if (refreshFn) {
+              refreshFn();
+            }
+            // Also trigger a manual refresh by updating userID (if needed)
+            setTimeout(() => {
+              // Force BrainPrint to refresh
+              const event = new CustomEvent('brainprint-refresh', { detail: { userID: sessionId } });
+              window.dispatchEvent(event);
+            }, 500);
+          }).catch(err => {
+            console.error('Failed to track session completion:', err);
+          });
+        }
+        
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
         }
@@ -245,7 +306,8 @@ export default function Home() {
         return (
           <VisualizationView 
             lesson={finalResult.lesson} 
-            topic={topic} 
+            topic={topic}
+            images={finalResult.images}
           />
         );
       case 'simple':
@@ -261,7 +323,14 @@ export default function Home() {
           <LessonCard 
             lesson={finalResult.lesson} 
             images={finalResult.images} 
-            sessionId={sessionId || undefined} 
+            sessionId={sessionId || undefined}
+            explanationType={explanationType}
+            topic={topic}
+            onSave={() => {
+              // Trigger sidebar refresh if needed
+              const event = new CustomEvent('saved-lessons-refresh', { detail: { userID: sessionId } });
+              window.dispatchEvent(event);
+            }}
           />
         );
     }
@@ -281,6 +350,7 @@ export default function Home() {
           activeType={explanationType}
           onTypeChange={setExplanationType}
           disabled={isLoading}
+          userID={sessionId || 'default'}
         />
 
         {/* Main Content */}
@@ -301,7 +371,13 @@ export default function Home() {
 
           {/* BrainPrint Card */}
           <div className="mb-8">
-            <BrainPrintCard userID={sessionId || 'default'} className="mb-6" />
+            <BrainPrintCard 
+              userID={sessionId || 'default'} 
+              className="mb-6"
+              onUpdate={(data) => {
+                console.log('BrainPrint updated:', data);
+              }}
+            />
           </div>
 
           {/* Topic Form */}

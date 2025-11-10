@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
+	adkgoogle "github.com/InnoFusionTech/ExplainIQ/internal/adk/google"
 	"github.com/InnoFusionTech/ExplainIQ/internal/auth"
 	"github.com/InnoFusionTech/ExplainIQ/internal/elastic"
 	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
@@ -47,6 +48,28 @@ func DefaultPipelineConfig() PipelineConfig {
 		elasticURL = "http://elasticsearch:9200"
 	}
 	
+	// Get agent service URLs from environment variables (for Cloud Run)
+	// Fall back to Docker hostnames if not set (for local development)
+	summarizerURL := os.Getenv("AGENT_SUMMARIZER_URL")
+	if summarizerURL == "" {
+		summarizerURL = "http://agent-summarizer:8081"
+	}
+	
+	explainerURL := os.Getenv("AGENT_EXPLAINER_URL")
+	if explainerURL == "" {
+		explainerURL = "http://agent-explainer:8082"
+	}
+	
+	visualizerURL := os.Getenv("AGENT_VISUALIZER_URL")
+	if visualizerURL == "" {
+		visualizerURL = "http://agent-visualizer:8084"
+	}
+	
+	criticURL := os.Getenv("AGENT_CRITIC_URL")
+	if criticURL == "" {
+		criticURL = "http://agent-critic:8083"
+	}
+	
 	return PipelineConfig{
 		MaxRetries:   3,
 		RetryDelay:   2 * time.Second,
@@ -54,15 +77,15 @@ func DefaultPipelineConfig() PipelineConfig {
 		ContextTopK:  5,
 		ElasticIndex: "lessons",
 		AgentBaseURLs: map[string]string{
-			"summarizer": "http://agent-summarizer:8081",
-			"explainer":  "http://agent-explainer:8082",
-			"visualizer": "http://agent-visualizer:8084",
-			"critic":     "http://agent-critic:8083",
+			"summarizer": summarizerURL,
+			"explainer":  explainerURL,
+			"visualizer": visualizerURL,
+			"critic":     criticURL,
 		},
 		ElasticBaseURL: elasticURL,
 		ElasticAPIKey:  "",
 		LLMProjectID:   "explainiq-project",
-		LLMLocation:    "us-central1",
+		LLMLocation:    "europe-west1",
 	}
 }
 
@@ -104,7 +127,7 @@ type Pipeline struct {
 	elasticClient    *elastic.Client
 	elasticRetriever *elastic.Retriever
 	embeddingClient  *llm.EmbeddingClient
-	adkClients       map[string]*adk.Client
+	adkClients       map[string]*adkgoogle.Client
 	authClient       *auth.Client
 }
 
@@ -133,19 +156,14 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 	// Initialize auth client
 	authClient := auth.NewClient("http://localhost:8080") // Orchestrator's own URL
 
-	// Initialize ADK clients for each agent
-	adkClients := make(map[string]*adk.Client)
+	// Initialize Google ADK clients for each agent
+	adkClients := make(map[string]*adkgoogle.Client)
 	for agentName, baseURL := range config.AgentBaseURLs {
-		adkClients[agentName] = adk.NewClient(baseURL,
-			adk.WithTimeout(config.StepTimeout),
-			adk.WithConfig(adk.TaskConfig{
-				Timeout:     config.StepTimeout,
-				MaxRetries:  config.MaxRetries,
-				RetryDelay:  config.RetryDelay,
-				BackoffType: "exponential",
-			}),
-			adk.WithLogger(logger),
-		)
+		client := adkgoogle.NewClient(baseURL).
+			WithTimeout(config.StepTimeout).
+			WithLogger(logger).
+			WithAuthClient(authClient) // Enable service-to-service authentication for Cloud Run
+		adkClients[agentName] = client
 	}
 
 	return &Pipeline{
@@ -247,28 +265,37 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 			}).Warn("Step did not complete successfully, outputs not stored")
 		}
 
-		// Get quota information for SSE metadata
-		quotaInfo := make(map[string]interface{})
-		if orchestrator.quotaManager != nil {
-			if info, err := orchestrator.quotaManager.GetQuotaInfo(ctx, sessionID); err == nil {
-				quotaInfo = info
-			}
+		// Broadcast step completion or error
+		if stepResult.Status == "failed" {
+			// Send step_error event for failed steps
+			orchestrator.BroadcastEvent(sessionID, SSEEvent{
+				Type:      "step_error",
+				SessionID: sessionID,
+				StepID:    fmt.Sprintf("step-%d", i+1),
+				Data: map[string]interface{}{
+					"session_id": sessionID,
+					"step":       step.Name,
+					"error":      stepResult.Error,
+					"timestamp":  time.Now().Format(time.RFC3339),
+				},
+				Timestamp: time.Now(),
+			})
+		} else {
+			// Send step_complete event for successful steps
+			orchestrator.BroadcastEvent(sessionID, SSEEvent{
+				Type:      "step_complete",
+				SessionID: sessionID,
+				StepID:    fmt.Sprintf("step-%d", i+1),
+				Data: map[string]interface{}{
+					"session_id": sessionID,
+					"step":        step.Name,
+					"status":      stepResult.Status,
+					"duration":    stepResult.Duration.Milliseconds(),
+					"timestamp":   time.Now().Format(time.RFC3339),
+				},
+				Timestamp: time.Now(),
+			})
 		}
-
-		// Broadcast step completion
-		orchestrator.BroadcastEvent(sessionID, SSEEvent{
-			Type:      "step-complete",
-			SessionID: sessionID,
-			StepID:    fmt.Sprintf("step-%d", i+1),
-			Data: map[string]interface{}{
-				"step_name":   step.Name,
-				"status":      stepResult.Status,
-				"duration":    stepResult.Duration.Milliseconds(),
-				"retry_count": stepResult.RetryCount,
-				"quota_info":  quotaInfo,
-			},
-			Timestamp: time.Now(),
-		})
 
 		// Check if step failed and handle accordingly
 		if stepResult.Status == "failed" {
@@ -290,11 +317,12 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 
 				// Broadcast final failure event
 				orchestrator.BroadcastEvent(sessionID, SSEEvent{
-					Type:      "pipeline-failed",
+					Type:      "session_error",
 					SessionID: sessionID,
 					Data: map[string]interface{}{
-						"error":       result.Error,
-						"failed_step": step.Name,
+						"session_id": sessionID,
+						"error":      result.Error,
+						"timestamp":  time.Now().Format(time.RFC3339),
 					},
 					Timestamp: time.Now(),
 				})
@@ -377,12 +405,89 @@ func (p *Pipeline) runPipeline(ctx context.Context, sessionID string, orchestrat
 	}
 
 	// Broadcast final success event
+	// Prepare artifacts in the format expected by frontend
+	artifacts := make(map[string]interface{})
+	if lesson := p.extractLesson(finalResult); lesson != "" {
+		var lessonObj map[string]interface{}
+		if err := json.Unmarshal([]byte(lesson), &lessonObj); err == nil {
+			artifacts["lesson"] = lessonObj
+		}
+	}
+	// Extract images and captions from visualizer output
+	if visualizer, exists := finalResult["visualizer"]; exists {
+		if visualizerMap, ok := visualizer.(map[string]string); ok {
+			// Extract images JSON
+			if imagesJSON, exists := visualizerMap["images"]; exists {
+				var imageRefs []map[string]interface{}
+				if err := json.Unmarshal([]byte(imagesJSON), &imageRefs); err == nil {
+					imageArray := make([]map[string]string, 0)
+					for _, img := range imageRefs {
+						imageObj := make(map[string]string)
+						if url, ok := img["url"].(string); ok {
+							imageObj["url"] = url
+						}
+						if caption, ok := img["caption"].(string); ok {
+							imageObj["caption"] = caption
+						} else if alt, ok := img["alt_text"].(string); ok {
+							imageObj["caption"] = alt
+						}
+						if altText, ok := img["alt_text"].(string); ok {
+							imageObj["alt_text"] = altText
+						} else if caption, ok := img["caption"].(string); ok {
+							imageObj["alt_text"] = caption
+						}
+						if len(imageObj) > 0 {
+							imageArray = append(imageArray, imageObj)
+						}
+					}
+					if len(imageArray) > 0 {
+						artifacts["images"] = imageArray
+					}
+				}
+			}
+			// Extract captions JSON
+			if captionsJSON, exists := visualizerMap["captions"]; exists {
+				var captions []string
+				if err := json.Unmarshal([]byte(captionsJSON), &captions); err == nil {
+					if len(captions) > 0 {
+						artifacts["captions"] = captions
+					}
+				}
+			}
+		}
+	}
+	if summary := p.extractSummary(finalResult); summary != "" {
+		artifacts["summary"] = summary
+	}
+
+	// Log artifacts for debugging
+	p.logger.WithFields(logrus.Fields{
+		"session_id":     sessionID,
+		"has_lesson":     artifacts["lesson"] != nil,
+		"has_images":     artifacts["images"] != nil,
+		"has_captions":   artifacts["captions"] != nil,
+		"has_summary":    artifacts["summary"] != nil,
+		"images_count":   func() int {
+			if imgs, ok := artifacts["images"].([]map[string]string); ok {
+				return len(imgs)
+			}
+			return 0
+		}(),
+		"captions_count": func() int {
+			if caps, ok := artifacts["captions"].([]string); ok {
+				return len(caps)
+			}
+			return 0
+		}(),
+	}).Info("Broadcasting session_complete with artifacts")
+
 	orchestrator.BroadcastEvent(sessionID, SSEEvent{
-		Type:      "pipeline-completed",
+		Type:      "session_complete",
 		SessionID: sessionID,
 		Data: map[string]interface{}{
-			"result":   finalResult,
-			"duration": result.Duration.Milliseconds(),
+			"session_id": sessionID,
+			"artifacts":   artifacts,
+			"timestamp":   time.Now().Format(time.RFC3339),
 		},
 		Timestamp: time.Now(),
 	})
@@ -412,12 +517,13 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 
 	// Broadcast step start
 	orchestrator.BroadcastEvent(sessionID, SSEEvent{
-		Type:      "step-start",
+		Type:      "step_start",
 		SessionID: sessionID,
 		StepID:    fmt.Sprintf("step-%d", stepIndex+1),
 		Data: map[string]interface{}{
-			"step_name":  step.Name,
-			"step_index": stepIndex,
+			"session_id": sessionID,
+			"step":       step.Name,
+			"timestamp":  time.Now().Format(time.RFC3339),
 		},
 		Timestamp: time.Now(),
 	})
@@ -499,59 +605,35 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 			}
 		}
 
-		// Try to get ID token for the target agent (optional - for GCP service-to-service auth)
-		token, err := p.authClient.GetIDToken(ctx, p.config.AgentBaseURLs[step.Agent])
-		var client *adk.Client
-		
-		if err != nil {
-			// Authentication failed (likely not running on GCP) - continue without auth
-			p.logger.WithFields(logrus.Fields{
-				"session_id": sessionID,
-				"step":       step.Name,
-				"agent":      step.Agent,
-				"error":      err,
-			}).Warn("Failed to get ID token for agent, continuing without authentication")
-			
-			// Use the existing client without authentication
-			client = p.adkClients[step.Agent]
-		} else {
-			// Create authenticated client for this request
-			client = adk.NewClient(p.config.AgentBaseURLs[step.Agent],
-				adk.WithTimeout(p.config.StepTimeout),
-				adk.WithConfig(adk.TaskConfig{
-					Timeout:     p.config.StepTimeout,
-					MaxRetries:  p.config.MaxRetries,
-					RetryDelay:  p.config.RetryDelay,
-					BackoffType: "exponential",
-				}),
-				adk.WithLogger(p.logger),
-				adk.WithAuthToken(token),
-			)
+		// Get Google ADK client for this agent
+		client := p.adkClients[step.Agent]
+		if client == nil {
+			stepResult.Status = "failed"
+			stepResult.Error = fmt.Sprintf("Google ADK client for agent %s not found", step.Agent)
+			return stepResult
 		}
 
-		// Execute the task - construct full URL using baseURL from client
-		// DoTask expects a full URL, so we use the client's baseURL
-		fullURL := client.GetBaseURL() + "/task"
-		response, err := client.DoTask(ctx, fullURL, taskReq)
+		// Execute the task using Google ADK client
+		response, err := client.ExecuteTask(ctx, &taskReq)
 		if err == nil {
 			// Success
 			stepResult.Status = "completed"
 			stepResult.Output = response.Artifacts
 			stepResult.Metadata["metrics"] = response.Metrics
-			stepResult.Metadata["delta"] = response.Delta
-			stepResult.Metadata["next"] = response.Next
+			if response.Delta != "" {
+				stepResult.Metadata["delta"] = response.Delta
+			}
+			if response.Next != "" {
+				stepResult.Metadata["next"] = response.Next
+			}
 			return stepResult
 		}
 
 		lastErr = err
 
-		// Check if error is retryable
-		if taskErr, ok := err.(*adk.TaskError); ok && !taskErr.IsRetryable() {
-			// Non-retryable error
-			stepResult.Status = "failed"
-			stepResult.Error = err.Error()
-			return stepResult
-		}
+		// Check if error is retryable (for now, all errors are retryable)
+		// In the future, we can add error classification
+		// For now, we'll retry all errors up to MaxRetries
 
 		// Broadcast delta updates during execution
 		if attempt == 0 {
@@ -794,13 +876,32 @@ func (p *Pipeline) extractLesson(finalResult map[string]interface{}) string {
 }
 
 // extractImages extracts image references from final result
+// Returns a map of image URLs to captions for backward compatibility
 func (p *Pipeline) extractImages(finalResult map[string]interface{}) map[string]string {
 	images := make(map[string]string)
 
 	if visualizer, exists := finalResult["visualizer"]; exists {
 		if visualizerMap, ok := visualizer.(map[string]string); ok {
+			// Check for images JSON string
+			if imagesJSON, exists := visualizerMap["images"]; exists {
+				var imageRefs []map[string]interface{}
+				if err := json.Unmarshal([]byte(imagesJSON), &imageRefs); err == nil {
+					for _, img := range imageRefs {
+						if url, ok := img["url"].(string); ok {
+							caption := ""
+							if cap, ok := img["caption"].(string); ok {
+								caption = cap
+							} else if alt, ok := img["alt_text"].(string); ok {
+								caption = alt
+							}
+							images[url] = caption
+						}
+					}
+				}
+			}
+			// Also check for legacy format (image_* keys)
 			for k, v := range visualizerMap {
-				if strings.HasPrefix(k, "image_") || strings.Contains(k, "image") {
+				if strings.HasPrefix(k, "image_") || (strings.Contains(k, "image") && !strings.Contains(k, "images")) {
 					images[k] = v
 				}
 			}

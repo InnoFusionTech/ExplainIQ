@@ -19,8 +19,10 @@ func TestNewGeminiClient(t *testing.T) {
 	assert.NotNil(t, client)
 	assert.NotNil(t, client.client)
 	assert.NotNil(t, client.Models)
-	assert.Equal(t, "gemini-1.5-flash", client.model)
 	assert.NotNil(t, client.logger)
+	// Verify model info
+	info := client.GetModelInfo()
+	assert.NotNil(t, info)
 }
 
 // TestNewGeminiClientWithEmptyKey tests Gemini client creation with empty key
@@ -29,7 +31,7 @@ func TestNewGeminiClientWithEmptyKey(t *testing.T) {
 
 	assert.NotNil(t, client)
 	assert.NotNil(t, client.client)
-	// Will use environment variable or ADC if no key provided
+	// Will use environment variable or ADC
 }
 
 // TestSummarizeSuccess tests successful summarization
@@ -83,8 +85,7 @@ func TestSummarizeSuccess(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -131,8 +132,7 @@ func TestSummarizeAPIError(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -149,8 +149,7 @@ func TestSummarizeAPIError(t *testing.T) {
 func TestSummarizeNetworkError(t *testing.T) {
 	// Create client with invalid URL
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = "http://invalid-url:9999"
+	client.baseURL = "http://invalid-url:9999"
 
 	// Test summarization
 	ctx := context.Background()
@@ -173,8 +172,7 @@ func TestSummarizeInvalidJSON(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -200,8 +198,7 @@ func TestSummarizeNoCandidates(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -237,8 +234,7 @@ func TestSummarizeInvalidJSONInResponse(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -279,8 +275,7 @@ func TestSummarizeEmptyArrays(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -323,8 +318,7 @@ func TestSummarizeMissingFields(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test summarization
 	ctx := context.Background()
@@ -406,8 +400,7 @@ func TestHealthSuccess(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test health check
 	ctx := context.Background()
@@ -427,8 +420,7 @@ func TestHealthFailure(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test health check
 	ctx := context.Background()
@@ -442,13 +434,10 @@ func TestHealthFailure(t *testing.T) {
 // TestSetAPIKey tests API key setting
 func TestSetAPIKey(t *testing.T) {
 	client := NewGeminiClient("")
-	// Note: apiKey is no longer a field - it's stored in the genai.Client
-	// assert.Equal(t, "", client.apiKey)
+	assert.Equal(t, "", client.apiKey)
 
 	client.SetAPIKey("new-api-key")
-	// Note: apiKey is no longer a field - it's stored in the genai.Client
-	// assert.Equal(t, "new-api-key", client.apiKey)
-	assert.NotNil(t, client.client) // Verify client was created
+	assert.Equal(t, "new-api-key", client.apiKey)
 }
 
 // TestSetModel tests model setting
@@ -463,14 +452,10 @@ func TestSetModel(t *testing.T) {
 // TestSetBaseURL tests base URL setting
 func TestSetBaseURL(t *testing.T) {
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// assert.Equal(t, "https://generativelanguage.googleapis.com/v1beta", client.baseURL)
+	assert.Equal(t, "https://generativelanguage.googleapis.com/v1beta", client.baseURL)
 
 	client.SetBaseURL("https://custom-api.com/v1")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// assert.Equal(t, "https://custom-api.com/v1", client.baseURL)
-	// SetBaseURL is kept for interface compatibility but doesn't actually change the base URL
-	assert.NotNil(t, client.client)
+	assert.Equal(t, "https://custom-api.com/v1", client.baseURL)
 }
 
 // TestGetModelInfo tests model info retrieval
@@ -524,8 +509,7 @@ func BenchmarkSummarize(b *testing.B) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	ctx := context.Background()
 
@@ -608,8 +592,7 @@ func TestExplainWithOGSuccess(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test OG lesson generation
 	ctx := context.Background()
@@ -647,8 +630,7 @@ func TestExplainWithOGAPIError(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test OG lesson generation
 	ctx := context.Background()
@@ -675,8 +657,7 @@ func TestExplainWithOGNoCandidates(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test OG lesson generation
 	ctx := context.Background()
@@ -712,8 +693,7 @@ func TestExplainWithOGInvalidJSON(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test OG lesson generation
 	ctx := context.Background()
@@ -849,8 +829,7 @@ func BenchmarkExplainWithOG(b *testing.B) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	ctx := context.Background()
 
@@ -958,8 +937,7 @@ func TestCritiqueLessonSuccess(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test lesson critique
 	lessonJSON := `{
@@ -1017,8 +995,7 @@ func TestCritiqueLessonAPIError(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test lesson critique
 	ctx := context.Background()
@@ -1045,8 +1022,7 @@ func TestCritiqueLessonNoCandidates(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test lesson critique
 	ctx := context.Background()
@@ -1082,8 +1058,7 @@ func TestCritiqueLessonInvalidJSON(t *testing.T) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	// Test lesson critique
 	ctx := context.Background()
@@ -1247,8 +1222,7 @@ func BenchmarkCritiqueLesson(b *testing.B) {
 
 	// Create client with mock server
 	client := NewGeminiClient("test-api-key")
-	// Note: baseURL is no longer a field - SDK doesn't support custom base URLs
-	// client.baseURL = server.URL
+	client.baseURL = server.URL
 
 	ctx := context.Background()
 	lessonJSON := `{

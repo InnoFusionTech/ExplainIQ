@@ -21,7 +21,7 @@ export interface StepStatus {
 }
 
 export interface SSEEvent {
-  type: 'step_start' | 'step_complete' | 'step_error' | 'session_complete' | 'session_error';
+  type: 'connected' | 'step_start' | 'step_complete' | 'step_error' | 'session_complete' | 'session_error';
   data: {
     session_id: string;
     step?: string;

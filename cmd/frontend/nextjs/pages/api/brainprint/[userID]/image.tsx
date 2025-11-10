@@ -21,7 +21,8 @@ export default async function handler(req: NextRequest) {
     let brainPrintData = null;
     if (userID && userID !== 'User') {
       try {
-        const orchestratorURL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || process.env.ORCHESTRATOR_URL || 'http://localhost:8080';
+        // Edge runtime has access to runtime env vars
+        const orchestratorURL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8080';
         const response = await fetch(`${orchestratorURL}/api/brainprint/${userID}`);
         if (response.ok) {
           brainPrintData = await response.json();
@@ -33,8 +34,9 @@ export default async function handler(req: NextRequest) {
 
     // Use fetched data or fallback to query params
     const displayName = brainPrintData ? (brainPrintData.userID || name) : name;
-    const displayType = brainPrintData?.recommendedType || recommendedType;
+    const displayType = brainPrintData?.recommendedType || brainPrintData?.dominantStyle || recommendedType;
     const displaySessions = brainPrintData?.totalSessions || parseInt(totalSessions) || 0;
+    const usageBreakdown = brainPrintData?.usage || brainPrintData?.byType || {};
 
     // Get color for each learning type
     const getTypeColor = (type: string) => {
@@ -178,11 +180,95 @@ export default async function handler(req: NextRequest) {
                 fontSize: '28px',
                 color: '#6b7280',
                 marginTop: '20px',
+                marginBottom: '30px',
               }}
             >
               <span style={{ fontWeight: '600', color: '#374151' }}>{displaySessions}</span>
               <span style={{ margin: '0 8px' }}>learning sessions</span>
             </div>
+
+            {/* Usage Breakdown - Bar Chart */}
+            {Object.keys(usageBreakdown).length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  width: '100%',
+                  marginTop: '20px',
+                  paddingTop: '30px',
+                  borderTop: '2px solid #e5e7eb',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '24px',
+                    fontWeight: '600',
+                    color: '#374151',
+                    marginBottom: '20px',
+                    textAlign: 'center',
+                  }}
+                >
+                  Usage Breakdown
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    width: '100%',
+                  }}
+                >
+                  {Object.entries(usageBreakdown).map(([type, count]: [string, any]) => {
+                    if (!count || count === 0) return null;
+                    const total = Object.values(usageBreakdown).reduce((sum: number, val: any) => sum + (val || 0), 0);
+                    const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                    const typeColor = getTypeColor(type);
+                    return (
+                      <div
+                        key={type}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            fontSize: '20px',
+                            color: '#374151',
+                          }}
+                        >
+                          <span style={{ fontWeight: '500' }}>{type}</span>
+                          <span style={{ fontWeight: '600', color: typeColor }}>
+                            {count} ({percentage}%)
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            width: '100%',
+                            height: '16px',
+                            backgroundColor: '#e5e7eb',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${percentage}%`,
+                              height: '100%',
+                              backgroundColor: typeColor,
+                              borderRadius: '8px',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -194,9 +280,10 @@ export default async function handler(req: NextRequest) {
               marginTop: '40px',
               fontSize: '24px',
               color: '#9ca3af',
+              fontWeight: '500',
             }}
           >
-            Share your learning style at explainiq.ai
+            My BrainPrint — Powered by ExplainIQ
           </div>
         </div>
       ),

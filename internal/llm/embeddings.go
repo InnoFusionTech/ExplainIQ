@@ -391,7 +391,7 @@ func Embed(ctx context.Context, texts []string) ([][]float32, error) {
 		location = os.Getenv("EXPLAINIQ_REGION")
 	}
 	if location == "" {
-		location = "us-central1" // Default location
+		location = "europe-west1" // Default location
 	}
 
 	client := NewEmbeddingClient(projectID, location)

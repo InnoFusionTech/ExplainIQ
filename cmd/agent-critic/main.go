@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/InnoFusionTech/ExplainIQ/internal/adk"
-	"github.com/InnoFusionTech/ExplainIQ/internal/agent"
+	adkgoogle "github.com/InnoFusionTech/ExplainIQ/internal/adk/google"
 	"github.com/InnoFusionTech/ExplainIQ/internal/constants"
 	"github.com/InnoFusionTech/ExplainIQ/internal/llm"
 	"github.com/sirupsen/logrus"
@@ -113,22 +112,32 @@ func main() {
 	// Create critic service
 	service := NewCriticService()
 
-	// Check if authentication is required (default to true for production, false for local dev)
-	requireAuth := true
-	if requireAuthStr := os.Getenv("REQUIRE_AUTH"); requireAuthStr != "" {
-		if val, err := strconv.ParseBool(requireAuthStr); err == nil {
-			requireAuth = val
-		}
+	// Create Google ADK agent from TaskProcessor
+	adkAgent, err := adkgoogle.CreateAgent(
+		constants.ServiceCritic,
+		"Agent that critiques lessons and identifies issues with severity levels, providing patch plans for improvements",
+		service,
+		service.logger,
+	)
+	if err != nil {
+		service.logger.Fatalf("Failed to create Google ADK agent: %v", err)
 	}
 
-	// Start agent service using shared infrastructure
-	if err := agent.StartAgentService(agent.ServiceConfig{
-		ServiceName: constants.ServiceCritic,
-		DefaultPort: constants.DefaultPortCritic,
-		DefaultURL:  constants.DefaultURLCritic,
-		Processor:   service,
-		RequireAuth: requireAuth,
-	}); err != nil {
-		service.logger.Fatalf("Failed to start service: %v", err)
+	// Get port from environment or use default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = constants.DefaultPortCritic
+	}
+
+	// Create and start A2A server
+	server, err := adkgoogle.NewA2AServer(adkAgent, port, service.logger)
+	if err != nil {
+		service.logger.Fatalf("Failed to create A2A server: %v", err)
+	}
+
+	service.logger.Infof("Starting Google ADK A2A server for %s on port %s", constants.ServiceCritic, port)
+	service.logger.Infof("AgentCard available at: %s", server.GetAgentCardURL())
+	if err := server.Start(); err != nil {
+		service.logger.Fatalf("Failed to start A2A server: %v", err)
 	}
 }

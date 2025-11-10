@@ -480,11 +480,7 @@ done:
 }
 
 // TestExecuteStep tests step execution
-// NOTE: This test is disabled because executeStep is a private method on Pipeline, not Orchestrator
-// To test step execution, use RunSession which executes the full pipeline
 func TestExecuteStep(t *testing.T) {
-	t.Skip("executeStep is not a public method on Orchestrator - use RunSession instead")
-	
 	o := NewOrchestrator()
 
 	// Create session
@@ -495,8 +491,8 @@ func TestExecuteStep(t *testing.T) {
 	o.AddClient(session.ID, client)
 	defer o.RemoveClient(session.ID, client)
 
-	// Execute a single step - this method doesn't exist on Orchestrator
-	// o.executeStep(session.ID, "step-1", "test-step", 0)
+	// Execute a single step
+	o.executeStep(session.ID, "step-1", "test-step", 0)
 
 	// Collect events
 	var events []SSEEvent
