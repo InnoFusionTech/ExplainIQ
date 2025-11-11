@@ -29,6 +29,10 @@ spec:
             secretKeyRef:
               name: google-ai-api-key
               key: "1"
+        - name: GCS_BUCKET
+          value: "explainiq-diagrams"
+        - name: GCS_PROJECT_ID
+          value: "PROJECT_ID"
         resources:
           limits:
             cpu: "2"

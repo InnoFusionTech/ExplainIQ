@@ -15,39 +15,35 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
   // Generate Mermaid diagram from lesson content
   const generateMermaidDiagram = (): string => {
     // Escape special characters that might break Mermaid syntax
-    const escapeMermaidText = (text: string | undefined, maxLength: number = 60): string => {
+    // No truncation - show all text
+    const escapeMermaidText = (text: string | undefined): string => {
       if (!text) return '';
-      // Clean and truncate text
+      // Clean text but don't truncate
       let cleaned = text
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
-        .replace(/\n/g, ' ')
+        .replace(/\n/g, '<br/>')  // Preserve line breaks as HTML breaks
         .replace(/\r/g, '')
-        .replace(/\s+/g, ' ')
+        .replace(/\s+/g, ' ')  // Collapse multiple spaces but keep single spaces
         .trim();
       
-      if (cleaned.length > maxLength) {
-        cleaned = cleaned.substring(0, maxLength) + '...';
-      }
       return cleaned;
     };
 
-    // Extract key phrases from each section for better visualization
-    const extractKeyPhrase = (text: string | undefined, maxWords: number = 8): string => {
-      if (!text) return '';
-      const words = text.split(/\s+/).filter(w => w.length > 0);
-      if (words.length <= maxWords) return escapeMermaidText(text, 80);
-      return escapeMermaidText(words.slice(0, maxWords).join(' '), 80) + '...';
+    // Use full text from each section - no truncation
+    const getFullText = (text: string | undefined, defaultLabel: string): string => {
+      if (!text || text.trim().length === 0) return defaultLabel;
+      return escapeMermaidText(text);
     };
 
-    const escapedTopic = escapeMermaidText(topic, 50);
-    const bigPicture = extractKeyPhrase(lesson.big_picture) || 'Overview';
-    const metaphor = extractKeyPhrase(lesson.metaphor) || 'Analogy';
-    const mechanism = extractKeyPhrase(lesson.core_mechanism) || 'How it works';
-    const examples = extractKeyPhrase(lesson.toy_example_code) || 'Code examples';
-    const applications = extractKeyPhrase(lesson.real_life) || 'Real world applications';
-    const bestPractices = extractKeyPhrase(lesson.best_practices) || 'Best practices';
-    const memoryHook = extractKeyPhrase(lesson.memory_hook) || 'Memory aid';
+    const escapedTopic = escapeMermaidText(topic);
+    const bigPicture = getFullText(lesson.big_picture, 'Overview');
+    const metaphor = getFullText(lesson.metaphor, 'Analogy');
+    const mechanism = getFullText(lesson.core_mechanism, 'How it works');
+    const examples = getFullText(lesson.toy_example_code, 'Code examples');
+    const applications = getFullText(lesson.real_life, 'Real world applications');
+    const bestPractices = getFullText(lesson.best_practices, 'Best practices');
+    const memoryHook = getFullText(lesson.memory_hook, 'Memory aid');
 
     return `graph TD
     A["${escapedTopic}"]
@@ -81,27 +77,24 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
 
   // Generate flowchart diagram from lesson content
   const generateFlowchart = (): string => {
-    // Escape text for flowchart labels
-    const escapeFlowchartText = (text: string | undefined, maxLength: number = 40): string => {
+    // Escape text for flowchart labels - no truncation
+    const escapeFlowchartText = (text: string | undefined): string => {
       if (!text) return '';
       let cleaned = text
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
-        .replace(/\n/g, ' ')
+        .replace(/\n/g, '<br/>')  // Preserve line breaks
         .replace(/\r/g, '')
         .replace(/\s+/g, ' ')
         .trim();
       
-      if (cleaned.length > maxLength) {
-        cleaned = cleaned.substring(0, maxLength) + '...';
-      }
       return cleaned;
     };
 
-    // Extract meaningful snippets from each section
+    // Use full text from each section - no truncation
     const getSectionSnippet = (text: string | undefined, label: string): string => {
       if (!text || text.trim().length === 0) return label;
-      const snippet = escapeFlowchartText(text, 35);
+      const snippet = escapeFlowchartText(text);
       return snippet.length > 0 ? snippet : label;
     };
 
@@ -111,7 +104,7 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
     const examplesSnippet = getSectionSnippet(lesson.toy_example_code, 'Examples');
     const applicationsSnippet = getSectionSnippet(lesson.real_life, 'Applications');
     const bestPracticesSnippet = getSectionSnippet(lesson.best_practices, 'Best Practices');
-    const escapedTopic = escapeFlowchartText(topic, 30);
+    const escapedTopic = escapeFlowchartText(topic);
 
     return `flowchart LR
     Start([Start: ${escapedTopic}]) --> Understand["${bigPictureSnippet}"]
@@ -134,32 +127,24 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
 
   // Generate mind map from lesson content
   const generateMindMap = (): string => {
-    // Escape special characters for mind map
-    const escapeText = (text: string | undefined, maxLength: number = 60): string => {
+    // Escape special characters for mind map - no truncation
+    const escapeText = (text: string | undefined): string => {
       if (!text) return '';
       let cleaned = text
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
-        .replace(/\n/g, ' ')
+        .replace(/\n/g, '<br/>')  // Preserve line breaks
         .replace(/\r/g, '')
         .replace(/\s+/g, ' ')
         .trim();
       
-      if (cleaned.length > maxLength) {
-        // Try to break at word boundary
-        const truncated = cleaned.substring(0, maxLength);
-        const lastSpace = truncated.lastIndexOf(' ');
-        cleaned = lastSpace > 0 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
-      }
       return cleaned;
     };
 
-    // Extract key concepts from each section
+    // Use full text from each section - no truncation
     const extractKeyConcept = (text: string | undefined, defaultLabel: string): string => {
       if (!text || text.trim().length === 0) return defaultLabel;
-      // Get first sentence or first 60 chars
-      const firstSentence = text.split(/[.!?]/)[0].trim();
-      return escapeText(firstSentence || text, 60) || defaultLabel;
+      return escapeText(text) || defaultLabel;
     };
 
     const bigPicture = extractKeyConcept(lesson.big_picture, 'Overview');
@@ -170,7 +155,7 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
     const bestPractices = extractKeyConcept(lesson.best_practices, 'Best practices');
     const memoryHook = extractKeyConcept(lesson.memory_hook, 'Memory aid');
 
-    const escapedTopic = escapeText(topic, 40);
+    const escapedTopic = escapeText(topic);
 
     return `mindmap
   root((${escapedTopic}))
@@ -346,6 +331,8 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
             preElement.textContent = diagram;
             preElement.style.display = 'block';
             preElement.style.textAlign = 'center';
+            preElement.style.width = '100%';
+            preElement.style.overflow = 'visible';
             
             // Clear and append
             mermaidRef.current.innerHTML = '';
@@ -623,17 +610,22 @@ const InteractiveVisualizations: React.FC<InteractiveVisualizationsProps> = ({ l
         </div>
 
         {/* Visualization Content */}
-        <div className="mt-6 min-h-[500px]">
+        <div className="mt-6">
           {activeViz === 'mermaid' || activeViz === 'flowchart' || activeViz === 'mindmap' ? (
             <div 
               ref={mermaidRef} 
-              className="w-full bg-white rounded-lg p-6 border border-gray-200 overflow-auto"
-              style={{ minHeight: '500px' }}
+              className="w-full bg-white rounded-lg p-6 border border-gray-200 mermaid-container"
+              style={{ 
+                maxHeight: '80vh',
+                minHeight: '500px',
+                overflow: 'auto',
+                position: 'relative'
+              }}
             >
               <div className="text-gray-500 text-center py-8">Loading diagram...</div>
             </div>
           ) : activeViz === 'chart' ? (
-            <div id="chartContainer" className="h-[500px] bg-white rounded-lg p-4">
+            <div id="chartContainer" className="h-[500px] bg-white rounded-lg p-4 overflow-auto">
               <canvas id="lessonChart"></canvas>
             </div>
           ) : null}

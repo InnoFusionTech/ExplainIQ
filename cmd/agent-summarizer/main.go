@@ -137,11 +137,13 @@ func main() {
 	service := NewSummarizerService()
 
 	// Create Google ADK agent from TaskProcessor
+	// Wrap logrus.Logger in an adapter to match the expected interface
+	loggerAdapter := adkgoogle.NewLoggerAdapter(service.logger)
 	adkAgent, err := adkgoogle.CreateAgent(
 		constants.ServiceSummarizer,
 		"Agent that summarizes topics and extracts key information including outline, prerequisites, misconceptions, and citations",
 		service,
-		service.logger,
+		loggerAdapter,
 	)
 	if err != nil {
 		service.logger.Fatalf("Failed to create Google ADK agent: %v", err)

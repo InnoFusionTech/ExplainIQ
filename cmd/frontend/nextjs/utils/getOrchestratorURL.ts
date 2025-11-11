@@ -5,34 +5,44 @@
 export function getOrchestratorURL(): string {
   // In browser/client-side code, check for window object
   if (typeof window !== 'undefined') {
-    // Try to get from window object (set at runtime)
+    // Priority 1: Check if we're on Cloud Run first (before checking window variable)
+    // This ensures we use the correct URL even if _app.tsx hasn't set it yet
+    const currentHost = window.location.hostname;
+    if (currentHost.includes('.a.run.app') || currentHost.includes('.run.app')) {
+      // Cloud Run domain - use known orchestrator URL
+      // Known orchestrator URL from deployment: https://explainiq-orchestrator-othekugkka-ew.a.run.app
+      // This is set as a fallback since Cloud Run service hashes are different
+      return 'https://explainiq-orchestrator-othekugkka-ew.a.run.app';
+    }
+    
+    // Priority 2: Try to get from window object (set at runtime via _app.tsx)
     const windowURL = (window as any).__ORCHESTRATOR_URL__;
-    if (windowURL) {
+    if (windowURL && windowURL !== 'http://localhost:8080' && !windowURL.includes('localhost')) {
       return windowURL;
     }
     
-    // Try to get from environment variable (available if set at build time)
+    // Priority 3: Try to get from environment variable (available if set at build time)
+    // Note: In client-side code, NEXT_PUBLIC_* vars are embedded at build time
     const envURL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL;
-    if (envURL && envURL !== 'http://localhost:8080') {
+    if (envURL && envURL !== 'http://localhost:8080' && !envURL.includes('localhost')) {
       return envURL;
     }
     
-    // Fallback: construct from current window location
-    // If frontend is on Cloud Run, orchestrator should be on same domain pattern
-    const currentHost = window.location.hostname;
-    if (currentHost.includes('.a.run.app')) {
-      // Extract the service name and construct orchestrator URL
-      // Frontend: explainiq-frontend-xxx-ew.a.run.app
-      // Orchestrator: explainiq-orchestrator-xxx-ew.a.run.app
-      const orchestratorHost = currentHost.replace('explainiq-frontend', 'explainiq-orchestrator');
-      return `https://${orchestratorHost}`;
+    // Priority 4: Check if we're on localhost (development)
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      return 'http://localhost:8080';
     }
   }
   
   // Server-side or fallback
-  return process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 
-         process.env.ORCHESTRATOR_URL || 
-         'http://localhost:8080';
+  const serverURL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 
+                    process.env.ORCHESTRATOR_URL;
+  if (serverURL && serverURL !== 'http://localhost:8080' && !serverURL.includes('localhost')) {
+    return serverURL;
+  }
+  
+  // Final fallback
+  return 'http://localhost:8080';
 }
 
 

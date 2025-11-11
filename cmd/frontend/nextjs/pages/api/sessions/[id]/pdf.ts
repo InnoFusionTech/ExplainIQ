@@ -30,10 +30,16 @@ export default async function handler(
     const ORCHESTRATOR_URL = getOrchestratorURL();
     console.log(`[PDF Generation] Fetching from: ${ORCHESTRATOR_URL}/api/sessions/result?id=${sessionId}`);
     
-    const sessionResponse = await fetch(`${ORCHESTRATOR_URL}/api/sessions/result?id=${sessionId}`);
+    const sessionResponse = await fetch(`${ORCHESTRATOR_URL}/api/sessions/result?id=${sessionId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
     
     if (!sessionResponse.ok) {
-      throw new Error(`Failed to fetch session data: ${sessionResponse.statusText}`);
+      const errorText = await sessionResponse.text();
+      console.error(`[PDF Generation] Orchestrator response error: ${sessionResponse.status} ${sessionResponse.statusText}`, errorText);
+      throw new Error(`Failed to fetch session data: ${sessionResponse.status} ${sessionResponse.statusText}`);
     }
 
     const sessionData = await sessionResponse.json();

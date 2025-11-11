@@ -282,11 +282,15 @@ func (o *Orchestrator) RunSession(sessionID string) {
 func (o *Orchestrator) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		o.logger.WithFields(logrus.Fields{
+			"error": err,
+		}).Error("Failed to decode create session request")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Topic == "" {
+		o.logger.Warn("Create session request missing topic")
 		http.Error(w, "Topic is required", http.StatusBadRequest)
 		return
 	}
@@ -297,7 +301,13 @@ func (o *Orchestrator) createSessionHandler(w http.ResponseWriter, r *http.Reque
 		explanationType = "standard"
 	}
 
+	// Create session with error handling
 	session := o.CreateSession(req.Topic)
+	if session == nil {
+		o.logger.Error("Failed to create session - CreateSession returned nil")
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
 	
 	// Store explanation type in session metadata
 	session.Metadata["explanation_type"] = explanationType
@@ -305,7 +315,12 @@ func (o *Orchestrator) createSessionHandler(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		o.logger.WithFields(logrus.Fields{
+			"session_id": session.ID,
+			"error":      err,
+		}).Error("Failed to encode create session response")
+	}
 }
 
 // runSessionHandler handles POST /api/sessions/{id}/run
@@ -400,6 +415,7 @@ func (o *Orchestrator) getSessionResultHandler(w http.ResponseWriter, r *http.Re
 func (o *Orchestrator) getBrainPrintHandler(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userID")
 	if userID == "" {
+		o.logger.Warn("BrainPrint request missing userID")
 		http.Error(w, "User ID is required", http.StatusBadRequest)
 		return
 	}
@@ -411,8 +427,8 @@ func (o *Orchestrator) getBrainPrintHandler(w http.ResponseWriter, r *http.Reque
 			"user_id": userID,
 			"error":   err,
 		}).Error("Failed to get BrainPrint")
-		http.Error(w, "Failed to retrieve BrainPrint", http.StatusInternalServerError)
-		return
+		// Return empty profile instead of error to allow frontend to display empty state
+		profile = brainprint.NewUserLearningProfile(userID)
 	}
 
 	// Get a random tip
@@ -431,7 +447,12 @@ func (o *Orchestrator) getBrainPrintHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		o.logger.WithFields(logrus.Fields{
+			"user_id": userID,
+			"error":   err,
+		}).Error("Failed to encode BrainPrint response")
+	}
 }
 
 // sessionCompleteHandler handles POST /api/session/complete
@@ -884,6 +905,7 @@ func (o *Orchestrator) setupRoutes() *chi.Mux {
 
 	// Routes
 	r.Get("/health", o.heartbeatHandler)
+	r.Get("/healthz", o.heartbeatHandler) // Cloud Run health check endpoint
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/sessions", func(r chi.Router) {
 			// Public endpoints (no auth required, but quota limited)
@@ -902,13 +924,13 @@ func (o *Orchestrator) setupRoutes() *chi.Mux {
 			})
 		})
 
-		// BrainPrint endpoints
+		// BrainPrint endpoints (no quota middleware - read-only, lightweight)
 		r.Get("/brainprint/{userID}", o.getBrainPrintHandler)
 		
-		// Session completion endpoint
+		// Session completion endpoint (no quota middleware - called after session completes)
 		r.Post("/session/complete", o.sessionCompleteHandler)
 		
-		// Tips endpoint
+		// Tips endpoint (no quota middleware - read-only, lightweight)
 		r.Get("/tips", o.getTipsHandler)
 
 		// Saved lessons endpoints

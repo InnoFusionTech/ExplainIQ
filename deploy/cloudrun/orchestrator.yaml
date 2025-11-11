@@ -24,6 +24,18 @@ spec:
           value: "release"
         - name: LOG_LEVEL
           value: "info"
+        - name: AGENT_SUMMARIZER_URL
+          value: "AGENT_SUMMARIZER_URL_PLACEHOLDER"
+        - name: AGENT_EXPLAINER_URL
+          value: "AGENT_EXPLAINER_URL_PLACEHOLDER"
+        - name: AGENT_CRITIC_URL
+          value: "AGENT_CRITIC_URL_PLACEHOLDER"
+        - name: AGENT_VISUALIZER_URL
+          value: "AGENT_VISUALIZER_URL_PLACEHOLDER"
+        - name: GCP_PROJECT_ID
+          value: "PROJECT_ID"
+        - name: SERVICE_URL
+          value: "SERVICE_URL_PLACEHOLDER"
         resources:
           limits:
             cpu: "2"

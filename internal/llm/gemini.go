@@ -808,10 +808,22 @@ func (c *GeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID 
 		c.logger.Warn("GCS_BUCKET not set, using default: explainiq-diagrams")
 	}
 
+	// For now, return empty images array since actual image generation/upload is not implemented
+	// This prevents broken image URLs from being displayed in the frontend
+	// TODO: Implement actual image generation using Imagen API and upload to GCS
+	c.logger.WithFields(logrus.Fields{
+		"session_id": sessionID,
+		"prompts":    len(prompts),
+	}).Info("Visualization generation skipped - image generation not yet implemented")
+	
+	// Return empty images array to avoid broken image URLs
+	// When image generation is implemented, uncomment the code below:
+	/*
 	for i, prompt := range prompts {
 		// In a real implementation, this would call the Imagen API
-		// For now, we'll create mock image references
-		// Note: These URLs are placeholders - actual images need to be uploaded to GCS
+		// Generate image using Imagen API
+		// Upload image to GCS
+		// Get signed URL or public URL
 		imageRef := ImageRef{
 			URL:     fmt.Sprintf("https://storage.googleapis.com/%s/sessions/%s/diagram_%d.png", gcsBucket, sessionID, i+1),
 			AltText: fmt.Sprintf("Diagram %d illustrating %s", i+1, lesson.CoreMechanism),
@@ -820,6 +832,7 @@ func (c *GeminiClient) VisualizeCore(ctx context.Context, lessonJSON, sessionID 
 		images = append(images, imageRef)
 		captions = append(captions, prompt.Caption)
 	}
+	*/
 
 	response := &VisualizeResponse{
 		Images:   images,

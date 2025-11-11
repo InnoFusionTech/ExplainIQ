@@ -113,11 +113,13 @@ func main() {
 	service := NewCriticService()
 
 	// Create Google ADK agent from TaskProcessor
+	// Wrap logrus.Logger in an adapter to match the expected interface
+	loggerAdapter := adkgoogle.NewLoggerAdapter(service.logger)
 	adkAgent, err := adkgoogle.CreateAgent(
 		constants.ServiceCritic,
 		"Agent that critiques lessons and identifies issues with severity levels, providing patch plans for improvements",
 		service,
-		service.logger,
+		loggerAdapter,
 	)
 	if err != nil {
 		service.logger.Fatalf("Failed to create Google ADK agent: %v", err)

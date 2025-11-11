@@ -53,21 +53,41 @@ func DefaultPipelineConfig() PipelineConfig {
 	summarizerURL := os.Getenv("AGENT_SUMMARIZER_URL")
 	if summarizerURL == "" {
 		summarizerURL = "http://agent-summarizer:8081"
+		logrus.Warn("AGENT_SUMMARIZER_URL not set, using default Docker hostname")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"url": summarizerURL,
+		}).Info("Using AGENT_SUMMARIZER_URL from environment")
 	}
 	
 	explainerURL := os.Getenv("AGENT_EXPLAINER_URL")
 	if explainerURL == "" {
 		explainerURL = "http://agent-explainer:8082"
+		logrus.Warn("AGENT_EXPLAINER_URL not set, using default Docker hostname")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"url": explainerURL,
+		}).Info("Using AGENT_EXPLAINER_URL from environment")
 	}
 	
 	visualizerURL := os.Getenv("AGENT_VISUALIZER_URL")
 	if visualizerURL == "" {
 		visualizerURL = "http://agent-visualizer:8084"
+		logrus.Warn("AGENT_VISUALIZER_URL not set, using default Docker hostname")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"url": visualizerURL,
+		}).Info("Using AGENT_VISUALIZER_URL from environment")
 	}
 	
 	criticURL := os.Getenv("AGENT_CRITIC_URL")
 	if criticURL == "" {
 		criticURL = "http://agent-critic:8083"
+		logrus.Warn("AGENT_CRITIC_URL not set, using default Docker hostname")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"url": criticURL,
+		}).Info("Using AGENT_CRITIC_URL from environment")
 	}
 	
 	return PipelineConfig{
@@ -159,6 +179,10 @@ func NewPipeline(config PipelineConfig) (*Pipeline, error) {
 	// Initialize Google ADK clients for each agent
 	adkClients := make(map[string]*adkgoogle.Client)
 	for agentName, baseURL := range config.AgentBaseURLs {
+		logger.WithFields(logrus.Fields{
+			"agent":  agentName,
+			"url":    baseURL,
+		}).Info("Initializing ADK client for agent")
 		client := adkgoogle.NewClient(baseURL).
 			WithTimeout(config.StepTimeout).
 			WithLogger(logger).
@@ -626,6 +650,49 @@ func (p *Pipeline) executeStep(ctx context.Context, sessionID string, step Pipel
 			if response.Next != "" {
 				stepResult.Metadata["next"] = response.Next
 			}
+			
+			// Log the artifacts received for debugging
+			p.logger.WithFields(logrus.Fields{
+				"session_id":    sessionID,
+				"step":          step.Name,
+				"artifacts":     response.Artifacts,
+				"artifact_count": len(response.Artifacts),
+				"artifact_keys":  func() []string {
+					keys := make([]string, 0, len(response.Artifacts))
+					for k := range response.Artifacts {
+						keys = append(keys, k)
+					}
+					return keys
+				}(),
+			}).Info("Step completed with artifacts")
+			
+			// Special logging for explainer step to debug missing lesson
+			if step.Name == "explainer" {
+				if lesson, exists := response.Artifacts["lesson"]; exists {
+					p.logger.WithFields(logrus.Fields{
+						"session_id":    sessionID,
+						"lesson_length": len(lesson),
+						"lesson_preview": func() string {
+							if len(lesson) > 200 {
+								return lesson[:200] + "..."
+							}
+							return lesson
+						}(),
+					}).Info("Explainer returned lesson")
+				} else {
+					p.logger.WithFields(logrus.Fields{
+						"session_id":    sessionID,
+						"artifact_keys": func() []string {
+							keys := make([]string, 0, len(response.Artifacts))
+							for k := range response.Artifacts {
+								keys = append(keys, k)
+							}
+							return keys
+						}(),
+					}).Warn("Explainer completed but lesson key is missing in artifacts")
+				}
+			}
+			
 			return stepResult
 		}
 

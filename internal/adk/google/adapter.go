@@ -10,7 +10,46 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
+	"github.com/sirupsen/logrus"
 )
+
+// LoggerAdapter adapts logrus.Logger to match the expected logger interface
+type LoggerAdapter struct {
+	logger *logrus.Logger
+}
+
+// NewLoggerAdapter creates a new logger adapter from a logrus.Logger
+func NewLoggerAdapter(logger *logrus.Logger) *LoggerAdapter {
+	return &LoggerAdapter{logger: logger}
+}
+
+// WithFields returns a logger entry with fields that implements the expected interface
+func (l *LoggerAdapter) WithFields(fields map[string]interface{}) interface {
+	Info(args ...interface{})
+	Error(args ...interface{})
+} {
+	// Convert map[string]interface{} to logrus.Fields
+	logrusFields := make(logrus.Fields)
+	for k, v := range fields {
+		logrusFields[k] = v
+	}
+	return &LoggerEntryAdapter{entry: l.logger.WithFields(logrusFields)}
+}
+
+// LoggerEntryAdapter adapts logrus.Entry to match the expected interface
+type LoggerEntryAdapter struct {
+	entry *logrus.Entry
+}
+
+// Info logs an info message
+func (l *LoggerEntryAdapter) Info(args ...interface{}) {
+	l.entry.Info(args...)
+}
+
+// Error logs an error message
+func (l *LoggerEntryAdapter) Error(args ...interface{}) {
+	l.entry.Error(args...)
+}
 
 // TaskProcessorAdapter adapts a TaskProcessor to work with Google ADK
 type TaskProcessorAdapter struct {

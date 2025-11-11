@@ -232,5 +232,38 @@
   animation: shimmer 2s infinite;
 }
 
+/* Mermaid visualization container with custom scrollbar */
+.mermaid-container {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mermaid-container::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.mermaid-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 6px;
+}
+
+.mermaid-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 6px;
+}
+
+.mermaid-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.mermaid-container svg {
+  min-width: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
 
 

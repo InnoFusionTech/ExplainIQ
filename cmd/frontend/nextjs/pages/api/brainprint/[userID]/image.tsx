@@ -22,7 +22,22 @@ export default async function handler(req: NextRequest) {
     if (userID && userID !== 'User') {
       try {
         // Edge runtime has access to runtime env vars
-        const orchestratorURL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:8080';
+        // Check if we're on Cloud Run by checking the request URL
+        const requestURL = req.url || '';
+        const isCloudRun = requestURL.includes('.run.app') || requestURL.includes('.a.run.app');
+        
+        let orchestratorURL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL;
+        
+        // If on Cloud Run and env var not set, use known orchestrator URL
+        if (isCloudRun && (!orchestratorURL || orchestratorURL.includes('localhost'))) {
+          orchestratorURL = 'https://explainiq-orchestrator-othekugkka-ew.a.run.app';
+        }
+        
+        // Fallback to localhost for development
+        if (!orchestratorURL || orchestratorURL.includes('localhost')) {
+          orchestratorURL = 'http://localhost:8080';
+        }
+        
         const response = await fetch(`${orchestratorURL}/api/brainprint/${userID}`);
         if (response.ok) {
           brainPrintData = await response.json();

@@ -111,6 +111,43 @@ try {
     }
 }
 
+# Create Cloud Storage buckets if they don't exist
+Write-Host "Setting up Cloud Storage buckets..." -ForegroundColor Yellow
+
+# Bucket for diagrams/images
+$diagramsBucket = "explainiq-diagrams"
+try {
+    $null = Invoke-GcloudCommand -Arguments @("storage", "buckets", "describe", "gs://$diagramsBucket", "--project=$ProjectId") -SuppressOutput
+    Write-Host "  Bucket '$diagramsBucket' already exists" -ForegroundColor Green
+} catch {
+    # Bucket doesn't exist, create it
+    try {
+        Write-Host "  Creating bucket '$diagramsBucket'..." -ForegroundColor Cyan
+        $null = Invoke-GcloudCommand -Arguments @("storage", "buckets", "create", "gs://$diagramsBucket", "--project=$ProjectId", "--location=$Region", "--uniform-bucket-level-access") -SuppressOutput
+        Write-Host "  [OK] Bucket '$diagramsBucket' created successfully" -ForegroundColor Green
+    } catch {
+        Write-Host "  WARNING: Failed to create bucket '$diagramsBucket'. You may need to create it manually:" -ForegroundColor Yellow
+        Write-Host "    gsutil mb -p $ProjectId -l $Region gs://$diagramsBucket" -ForegroundColor Cyan
+    }
+}
+
+# Bucket for PDFs
+$pdfsBucket = "explainiq-pdfs"
+try {
+    $null = Invoke-GcloudCommand -Arguments @("storage", "buckets", "describe", "gs://$pdfsBucket", "--project=$ProjectId") -SuppressOutput
+    Write-Host "  Bucket '$pdfsBucket' already exists" -ForegroundColor Green
+} catch {
+    # Bucket doesn't exist, create it
+    try {
+        Write-Host "  Creating bucket '$pdfsBucket'..." -ForegroundColor Cyan
+        $null = Invoke-GcloudCommand -Arguments @("storage", "buckets", "create", "gs://$pdfsBucket", "--project=$ProjectId", "--location=$Region", "--uniform-bucket-level-access") -SuppressOutput
+        Write-Host "  [OK] Bucket '$pdfsBucket' created successfully" -ForegroundColor Green
+    } catch {
+        Write-Host "  WARNING: Failed to create bucket '$pdfsBucket'. You may need to create it manually:" -ForegroundColor Yellow
+        Write-Host "    gsutil mb -p $ProjectId -l $Region gs://$pdfsBucket" -ForegroundColor Cyan
+    }
+}
+
 # Configure Docker authentication
 Write-Host "Configuring Docker authentication..." -ForegroundColor Yellow
 try {
@@ -181,6 +218,12 @@ Get-ChildItem $TmpDir/*.yaml | ForEach-Object {
     # Replace ORCHESTRATOR_URL_PLACEHOLDER with a temporary value (will be updated after deployment)
     # We'll use a placeholder that won't conflict with actual URLs
     $content = $content -replace "ORCHESTRATOR_URL_PLACEHOLDER", "https://explainiq-orchestrator-PLACEHOLDER.a.run.app"
+    # Replace agent URL placeholders (will be updated after deployment)
+    $content = $content -replace "AGENT_SUMMARIZER_URL_PLACEHOLDER", "https://explainiq-summarizer-PLACEHOLDER.a.run.app"
+    $content = $content -replace "AGENT_EXPLAINER_URL_PLACEHOLDER", "https://explainiq-explainer-PLACEHOLDER.a.run.app"
+    $content = $content -replace "AGENT_CRITIC_URL_PLACEHOLDER", "https://explainiq-critic-PLACEHOLDER.a.run.app"
+    $content = $content -replace "AGENT_VISUALIZER_URL_PLACEHOLDER", "https://explainiq-visualizer-PLACEHOLDER.a.run.app"
+    $content = $content -replace "SERVICE_URL_PLACEHOLDER", "https://explainiq-orchestrator-PLACEHOLDER.a.run.app"
     Set-Content $_.FullName -Value $content -NoNewline
 }
 

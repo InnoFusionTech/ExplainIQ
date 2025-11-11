@@ -107,11 +107,13 @@ func main() {
 	service := NewExplainerService()
 
 	// Create Google ADK agent from TaskProcessor
+	// Wrap logrus.Logger in an adapter to match the expected interface
+	loggerAdapter := adkgoogle.NewLoggerAdapter(service.logger)
 	adkAgent, err := adkgoogle.CreateAgent(
 		constants.ServiceExplainer,
 		"Agent that generates comprehensive explanations using OG (Open Generation) format including big picture, metaphor, core mechanism, toy examples, memory hooks, real-life applications, and best practices",
 		service,
-		service.logger,
+		loggerAdapter,
 	)
 	if err != nil {
 		service.logger.Fatalf("Failed to create Google ADK agent: %v", err)
